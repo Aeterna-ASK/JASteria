@@ -1261,11 +1261,18 @@ function initFirestoreSync() {
           } else if (name === 'menus') {
             if (Array.isArray(data)) {
               // 本体には画像が含まれないため、キャッシュ済みの menuImages を合成する。
+              // menuImages スナップショットが未到達の場合は、既存メニューの画像を維持して
+              // 画像が一旦消える→再書込→再受信…のループ（ping-pong）を防ぐ。
+              const prevById = {};
+              (state.menus || []).forEach(m => { prevById[m.id] = m; });
               data.forEach((mm) => {
                 const img = menuImageCache[mm.id];
                 if (img) {
                   mm.imageUrl = img.imageUrl || '';
                   mm.sampleImageUrl = img.sampleImageUrl || '';
+                } else if (prevById[mm.id]) {
+                  mm.imageUrl = prevById[mm.id].imageUrl || '';
+                  mm.sampleImageUrl = prevById[mm.id].sampleImageUrl || '';
                 }
               });
               state.menus = data;

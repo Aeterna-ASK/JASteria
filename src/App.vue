@@ -1,5 +1,5 @@
 <script setup>
-import { computed, watchEffect, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { restaurantStore } from './store/restaurantStore';
 
 // ビューコンポーネントのインポート
@@ -75,11 +75,10 @@ const pageTitle = computed(() => {
   return map[state.activeTab] || '';
 });
 
-// 初期化完了後にFirestore同期を開始
-watchEffect(() => {
-  if (state.initialized) {
-    restaurantStore.initFirestoreSync();
-  }
+// Firestore同期を一度だけ開始する（reactiveな再実行を避けるため onMounted を使用）。
+// loadStore() はモジュール読込時に同期実行され state.initialized=true 済みのため、ここで直接呼ぶ。
+onMounted(() => {
+  restaurantStore.initFirestoreSync();
 });
 </script>
 
