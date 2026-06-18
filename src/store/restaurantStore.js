@@ -1,6 +1,6 @@
 import { reactive, computed, readonly } from 'vue';
 import { db } from '../firebase';
-import { doc, onSnapshot, setDoc, collection, getDocs, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, collection } from 'firebase/firestore';
 
 const STORE_KEY = 'jas_restaurant_store_v2';
 
@@ -441,6 +441,12 @@ const state = reactive({
 // データ永続化 (Persistence) & 初期化
 // ============================================================================
 let isFirestoreSyncInitialized = false;
+// リモート(onSnapshot)からの反映中は true。ローカル→クラウドのエコー書き込みを抑止する。
+let isApplyingRemote = false;
+// menuImages コレクションの内容キャッシュ { [menuId]: { imageUrl, sampleImageUrl } }
+const menuImageCache = {};
+// クラウド同期(syncToFirestore)のデバウンスタイマー
+let firestoreSyncTimer = null;
 
 function loadStore() {
   try {
@@ -508,16 +514,76 @@ function saveStore() {
     };
     localStorage.setItem(STORE_KEY, JSON.stringify(saveData));
     // 【本番保護】localhost（開発環境）からは Firestore へ絶対に書き込まない。
-    // これにより、ローカルの操作・古いバックアップが本番データを上書きすることを防ぐ。
+    // また、リモート(onSnapshot)適用中(isApplyingRemote)は同じ内容を書き戻すエコーを抑止する。
     const isLocalDev = typeof location !== 'undefined' &&
       (location.hostname === 'localhost' || location.hostname === '127.0.0.1');
-    if (isFirestoreSyncInitialized && !isLocalDev) {
-      const docRef = doc(db, 'restaurants', 'default');
-      setDoc(docRef, saveData).catch(e => console.error('Firebase save error', e));
+    if (isFirestoreSyncInitialized && !isApplyingRemote && !isLocalDev) {
+      syncToFirestore();
     }
   } catch (error) {
     console.error('Failed to save storage for JAS Restaurant:', error);
   }
+}
+
+/**
+ * クラウド同期（本番ビルドの yy() を移植）
+ * 本番と同じ「種類別ドキュメント」構造で保存する：
+ *  - restaurants/{menus,ingredients,receipts,cookingLogs,cleaningLogs,
+ *    manualChapters,auditDocuments,t_inbox_documents,meta} を各 {data:[...]} で merge 保存
+ *  - メニュー画像は Firestore 1MB/doc 上限を避けるため menuImages/{メニューID} に分離保存（10件ずつ並列）
+ * 連続操作での過剰書き込みを防ぐため 2 秒デバウンスする。
+ */
+function syncToFirestore() {
+  if (firestoreSyncTimer) clearTimeout(firestoreSyncTimer);
+  firestoreSyncTimer = setTimeout(async () => {
+    try {
+      console.log('[Firestore Sync] クラウドへの同期開始...');
+      // 画像付きメニューを抽出してキャッシュを更新（本体ドキュメントからは画像を除外する）
+      const imaged = (state.menus || [])
+        .filter(m => m.imageUrl || m.sampleImageUrl)
+        .map(m => ({ id: m.id, imageUrl: m.imageUrl, sampleImageUrl: m.sampleImageUrl }));
+      imaged.forEach(m => {
+        menuImageCache[m.id] = { imageUrl: m.imageUrl || '', sampleImageUrl: m.sampleImageUrl || '' };
+      });
+      const menusNoImage = JSON.parse(JSON.stringify(state.menus || [])).map(m => {
+        const c = { ...m };
+        delete c.imageUrl;
+        delete c.sampleImageUrl;
+        return c;
+      });
+
+      const writes = [
+        setDoc(doc(db, 'restaurants', 'menus'), { data: menusNoImage }, { merge: true }),
+        setDoc(doc(db, 'restaurants', 'ingredients'), { data: JSON.parse(JSON.stringify(state.ingredients || [])) }, { merge: true }),
+        setDoc(doc(db, 'restaurants', 'receipts'), { data: JSON.parse(JSON.stringify(state.receipts || [])) }, { merge: true }),
+        setDoc(doc(db, 'restaurants', 'cookingLogs'), { data: JSON.parse(JSON.stringify(state.cookingLogs || [])) }, { merge: true }),
+        setDoc(doc(db, 'restaurants', 'cleaningLogs'), { data: JSON.parse(JSON.stringify(state.cleaningLogs || [])) }, { merge: true }),
+        setDoc(doc(db, 'restaurants', 'manualChapters'), { data: JSON.parse(JSON.stringify(state.manualChapters || [])) }, { merge: true }),
+        setDoc(doc(db, 'restaurants', 'auditDocuments'), { data: JSON.parse(JSON.stringify(state.auditDocuments || [])) }, { merge: true }),
+        setDoc(doc(db, 'restaurants', 't_inbox_documents'), { data: JSON.parse(JSON.stringify(state.t_inbox_documents || [])) }, { merge: true }),
+        setDoc(doc(db, 'restaurants', 'meta'), { data: {
+          auditCategories: JSON.parse(JSON.stringify(state.auditCategories || {})),
+          documents: JSON.parse(JSON.stringify(state.documents || [])),
+          externalRegInfo: JSON.parse(JSON.stringify(state.externalRegInfo || {}))
+        } }, { merge: true })
+      ];
+      await Promise.all(writes);
+
+      // 画像は menuImages/{メニューID} に1枚ずつ、10件ずつ並列で保存
+      for (let i = 0; i < imaged.length; i += 10) {
+        const batch = imaged.slice(i, i + 10).map(m =>
+          setDoc(doc(db, 'menuImages', String(m.id)),
+            { imageUrl: m.imageUrl || '', sampleImageUrl: m.sampleImageUrl || '' },
+            { merge: true }
+          ).catch(err => console.warn('Failed to save image', m.id, err))
+        );
+        await Promise.all(batch);
+      }
+      console.log('[Firestore Sync] 全データの同期保存完了');
+    } catch (e) {
+      console.error('[Firestore Sync] 保存失敗', e);
+    }
+  }, 2000);
 }
 
 // 即時初期化
@@ -1121,56 +1187,82 @@ function deleteCleaningLog(id) {
 function initFirestoreSync() {
   if (isFirestoreSyncInitialized) return;
   isFirestoreSyncInitialized = true;
-  const docRef = doc(db, 'restaurants', 'default');
-  // 同期はスキャン受信箱のみ（メニュー等のローカルデータは上書きしない）。
-  onSnapshot(docRef, (docSnap) => {
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      if (data.t_inbox_documents) state.t_inbox_documents = data.t_inbox_documents;
-    }
-  });
+  console.log('[Firestore Sync] リアルタイム同期開始...');
 
-  // 画像は menuImages コレクション（menuImages/{メニューID}）に保存されているため、
-  // 起動時に読み込んでメニューに合成する（読み取り専用・本番へは書き込まない）。
-  getDocs(collection(db, 'menuImages')).then((snap) => {
-    const imgById = {};
-    snap.forEach((d) => { imgById[d.id] = d.data(); });
-    let merged = 0;
-    state.menus.forEach((m) => {
-      const img = imgById[m.id];
-      if (img) {
-        if (img.imageUrl) m.imageUrl = img.imageUrl;
-        if (img.sampleImageUrl) m.sampleImageUrl = img.sampleImageUrl;
-        merged++;
+  const collectionNames = [
+    'menus', 'ingredients', 'receipts', 'cookingLogs', 'cleaningLogs',
+    'manualChapters', 'auditDocuments', 't_inbox_documents', 'meta'
+  ];
+  let receivedCount = 0;       // 初回スナップショットを受信した種類数
+  let migrationNeeded = false; // クラウドに該当ドキュメントが無く、ローカルに既存データがある場合 true
+
+  // 画像（menuImages/{メニューID}）をリアルタイムで反映し、キャッシュも更新する。
+  onSnapshot(collection(db, 'menuImages'), (snap) => {
+    snap.forEach((d) => {
+      const data = d.data();
+      menuImageCache[d.id] = data;
+      const m = state.menus.find(x => String(x.id) === d.id);
+      if (m) {
+        m.imageUrl = data.imageUrl || '';
+        m.sampleImageUrl = data.sampleImageUrl || '';
       }
     });
-    console.log(`[Images] menuImages から画像を読み込みました: ${merged} 件 / コレクション ${Object.keys(imgById).length} 件`);
-  }).catch((e) => console.error('menuImages load error:', e));
+  }, (err) => console.error('menuImages sync error:', err));
 
-  // マニュアル/規定文書データは本番では restaurants/manualChapters と restaurants/meta に
-  // 保存されている（{data: ...} 形式）。手元のlocalStorageには無いため起動時に読み込む（読み取り専用）。
-  getDoc(doc(db, 'restaurants', 'manualChapters')).then((snap) => {
-    if (snap.exists() && Array.isArray(snap.data().data) && (state.manualChapters || []).length === 0) {
-      state.manualChapters = snap.data().data;
-      console.log(`[Manual] manualChapters を読み込みました: ${state.manualChapters.length} 件`);
-    }
-  }).catch((e) => console.error('manualChapters load error:', e));
+  // 各種類別ドキュメントをリアルタイム購読し、ローカル状態へ反映する。
+  collectionNames.forEach((name) => {
+    onSnapshot(doc(db, 'restaurants', name), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data().data;
+        // リモート反映中はエコー書き込みを抑止する（saveStore 内で参照）。
+        isApplyingRemote = true;
+        try {
+          if (name === 'meta') {
+            const m = data || {};
+            if (m.auditCategories) state.auditCategories = { ...defaultAuditCategories, ...m.auditCategories };
+            if (m.documents) {
+              state.documents = m.documents;
+              if (!documentsDefaultSnapshot) documentsDefaultSnapshot = JSON.parse(JSON.stringify(m.documents));
+            }
+            if (m.externalRegInfo) state.externalRegInfo = m.externalRegInfo;
+          } else if (name === 'menus') {
+            if (Array.isArray(data)) {
+              // 本体には画像が含まれないため、キャッシュ済みの menuImages を合成する。
+              data.forEach((mm) => {
+                const img = menuImageCache[mm.id];
+                if (img) {
+                  mm.imageUrl = img.imageUrl || '';
+                  mm.sampleImageUrl = img.sampleImageUrl || '';
+                }
+              });
+              state.menus = data;
+            }
+          } else if (Array.isArray(data)) {
+            state[name] = data;
+          }
+          // localStorage へ反映（isApplyingRemote=true のためクラウドへは書き戻さない）。
+          saveStore();
+        } finally {
+          isApplyingRemote = false;
+        }
+      } else {
+        // クラウドに該当ドキュメントが無い場合、ローカルに実データがあれば初回移行対象とする。
+        if (name === 'menus' && state.menus && state.menus.length > 0) migrationNeeded = true;
+        if (name === 'ingredients' && state.ingredients && state.ingredients.length > 0) migrationNeeded = true;
+      }
 
-  getDoc(doc(db, 'restaurants', 'meta')).then((snap) => {
-    if (!snap.exists()) return;
-    const m = snap.data().data || {};
-    if (Array.isArray(m.documents) && (state.documents || []).length === 0) {
-      state.documents = m.documents;
-      documentsDefaultSnapshot = JSON.parse(JSON.stringify(m.documents));
-      console.log(`[Docs] documents を読み込みました: ${state.documents.length} カテゴリ`);
-    }
-    if (m.auditCategories && Object.keys(state.auditCategories || {}).length === 0) {
-      state.auditCategories = m.auditCategories;
-    }
-    if (m.externalRegInfo && Object.keys(state.externalRegInfo || {}).length === 0) {
-      state.externalRegInfo = m.externalRegInfo;
-    }
-  }).catch((e) => console.error('meta load error:', e));
+      receivedCount++;
+      // 全種類の初回スナップショットが揃い、移行が必要な場合のみローカル→クラウドへ一度だけ書き込む。
+      if (receivedCount === collectionNames.length && migrationNeeded) {
+        const isLocalDev = typeof location !== 'undefined' &&
+          (location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+        if (!isLocalDev) {
+          console.log('[Firestore Sync] 初回マイグレーション実行：ローカルからクラウドへ');
+          syncToFirestore();
+        }
+      }
+    }, (err) => console.warn('[Firestore Sync] 同期エラー:', name, err));
+  });
 }
 
   function setTargetMenuToClone(menu) {
