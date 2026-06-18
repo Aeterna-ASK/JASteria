@@ -5,6 +5,25 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>JASteria — 有機JAS 0004 飲食店監査アシスト</title>
+    <!-- 【フェイルセーフ】過去の Service Worker がリロードループを起こしたため、
+         ページ読込時に既存の SW を全て登録解除し、キャッシュも削除する。
+         SW の自己破棄を待たずページ側からも確実にループを断ち切るための保険。 -->
+    <script>
+      (function () {
+        try {
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function (regs) {
+              regs.forEach(function (r) { r.unregister(); });
+            }).catch(function () {});
+          }
+          if (window.caches && caches.keys) {
+            caches.keys().then(function (keys) {
+              keys.forEach(function (k) { caches.delete(k); });
+            }).catch(function () {});
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>
