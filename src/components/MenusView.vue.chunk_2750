@@ -1,0 +1,122 @@
+Created At: 2026-05-27T15:35:13Z
+Completed At: 2026-05-27T15:35:13Z
+Total Bytes: 132316
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+
+/* 適合 Yes 丸囲みの SVG ellipse 手書き風アニメーション */
+.compliance-table svg ellipse {
+stroke-dasharray: 200;
+stroke-dashoffset: 0;
+animation: drawComplianceCircle 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes drawComplianceCircle {
+from {
+stroke-dashoffset: 200;
+}
+to {
+stroke-dashoffset: 0;
+}
+}
+
+/* ----------------------------------------------------------------------------
+* 印刷用メディアクエリ (PDF出力時に完全に帳票のみにする)
+* ---------------------------------------------------------------------------- */
+@media print {
+body * {
+visibility: hidden;
+}
+
+.print-area, .print-area * {
+visibility: visible;
+}
+
+.print-area {
+position: absolute;
+left: 0;
+top: 0;
+width: 100%;
+padding: 0;
+margin: 0;
+}
+
+.no-print {
+display: none !important;
+}
+
+.excel-spec-sheet-v2 {
+border: 2px solid #000000 !important;
+box-shadow: none !important;
+padding: 8mm !important;
+width: 100% !important;
+max-width: 100% !important;
+margin: 0 !important;
+box-sizing: border-box !important;
+page-break-inside: avoid;
+-webkit-print-col
+<truncated 1597 bytes>
+.bottom-blocks-container {
+margin-top: 0.5rem !important;
+gap: 0.5rem !important;
+}
+
+.instructions-rows-table td {
+padding: 0.2rem 0.5rem !important;
+height: 32px !important;
+}
+
+.photo-body {
+height: 140px !important;
+}
+
+.footer-compliance-box {
+margin-top: 0.5rem !important;
+}
+
+.compliance-table tr {
+height: auto !important;
+}
+
+.compliance-table th, .compliance-table td {
+padding: 0.25rem 0.5rem !important;
+}
+}
+
+.w-5 { width: 5%; }
+.w-12 { width: 12%; }
+.w-13 { width: 13%; }
+.w-15 { width: 15%; }
+.w-20 { width: 20%; }
+.w-25 { width: 25%; }
+.w-35 { width: 35%; }
+.w-40 { width: 40%; }
+.w-45 { width: 45%; }
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.pre-wrap { white-space: pre-wrap; }
+.text-muted { color: #9ca3af; }
+.text-danger-text { color: #b91c1c; }
+
+/* --- 月別提供数・年間推移グラフおよび集計表スタイル --- */
+.menu-stats-box {
+background-color: #f8fafc;
+border: 1px solid var(--border, #e2e8f0);
+border-radius: var(--radius-sm, 6px);
+padding: 0.75rem 0.85rem;
+}
+
+.stats-header {
+font-size: 0.8rem;
+}
+
+/* CSSのみで作成する美しいレスポンシブ縦棒グラフ */
+.monthly-trend-chart {
+display: flex;
+justify-content: space-between;
+align-items: flex-end;
+height: 80px;
+background: #ffffff;
+border-left: 1.5px solid var(--border, #cbd5e1);
+border-bottom: 1.5px solid var(--border, #cbd5e1);
+padding: 0.5rem 0.4rem 0;
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.

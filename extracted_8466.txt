@@ -1,0 +1,18 @@
+Created At: 2026-06-14T19:48:38Z
+Completed At: 2026-06-14T19:48:42Z
+
+				The command failed with exit code: 1
+				Output:
+				[eval]:1
+const fs = require('fs'); let code = fs.readFileSync('src/store/restaurantStore.js', 'utf8'); code = code.replace(/resetToSeeds\n};/, 'resetToSeeds,\n  initFirestoreSync: () => { console.log(\\'Firestore sync initialized (dummy)\\'); }\n};'); fs.writeFileSync('src/store/restaurantStore.js', code);
+                                                                                                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Expected ',', got 'ident'
+
+SyntaxError: missing ) after argument list
+    at makeContextifyScript (node:internal/vm:194:14)
+    at compileScript (node:internal/process/execution:388:10)
+    at evalTypeScript (node:internal/process/execution:260:22)
+    at node:internal/main/eval_string:71:3
+
+Node.js v24.15.0
+

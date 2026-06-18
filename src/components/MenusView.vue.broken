@@ -1,0 +1,3051 @@
+<script setup>
+import { ref, computed, watch } from 'vue';
+import { restaurantStore } from '../store/restaurantStore';
+import { 
+  FileText, 
+  Plus, 
+  Trash2, 
+  Edit3, 
+  AlertTriangle, 
+  Check, 
+  X, 
+  Info,
+  Scale,
+  DollarSign,
+  AlertOctagon,
+  Eye,
+  Settings,
+  Printer,
+  Calendar,
+  UserCheck,
+  TrendingUp,
+  MapPin,
+  Sparkles,
+  Award,
+  Camera
+} from 'lucide-vue-next';
+
+const state = restaurantStore.state;
+const decodedMenus = computed(() => restaurantStore.decodedMenus);
+const ingredients = computed(() => state.ingredients);
+
+// メニューを年度別にグループ化
+const menusByYear = computed(() => {
+  const grouped = {};
+  decodedMenus.value.forEach(menu => {
+    const year = menu.year || '登録年度なし';
+    if (!grouped[year]) {
+      grouped[year] = [];
+    }
+    grouped[year].push(menu);
+  });
+  // 降順でソート（新しい年度が上に来る）
+  return Object.fromEntries(Object.entries(grouped).sort((a, b) => b[0].localeCompare(a[0])));
+});
+
+// モーダル・フォーム状態
+const showModal = ref(false);
+const isEditing = ref(false);
+const currentId = ref(null);
+
+// 配合デザイナーモーダル状態 (v1.1.0 大画面化UX改善)
+const showRecipeModal = ref(false);
+const recipeModalForm = ref({
+  menuId: null,
+  name: '',
+  recipe: []
+});
+
+// 帳票プレビュー用モーダル状態
+const showSpecSheet = ref(false);
+const selectedMenuForSpec = ref(null);
+
+// 入力タブ
+const activeFormTab = ref('basic'); // basic (基本情報), recipe (配合・シミュレーター), jas (JAS監査項目)
+
+const form = ref({
+  name: '',
+  price: 1000,
+  isOrganicClaim: true,
+  description: '',
+  recipe: [],
+  
+  // JAS 0004 料理スペック帳票項目
+  category: '有機料理スペック',
+  changeDetails: '',
+  targetCreatedDate: '',
+  startDate: '',
+  reviewDate: '',
+  deadline: '',
+  creatorApproved: '',
+  managerApproved: '',
+  courseTargetNum: '年間3600食',
+  singleTargetNum: '年間60食',
+  displayPeriod: '通年',
+  displayMethod: 'メニューに掲載',
+  displayStyle: '記号により表示',
+  cookingInstructions: '',
+  remarks: ''
+});
+
+const errorMessage = ref('');
+
+// 提供数・年間推移の表示状態・算出ロジック
+const expandedStats = ref({});
+const currentYear = ref(2026); // 監査等に合わせた標準年度 (必要に応じて動的に変更可能)
+
+const toggleStats = (menuId) => {
+  expandedStats.value[menuId] = !expandedStats.value[menuId];
+};
+
+const getMonthlyServingData = (menuId, year = currentYear.value) => {
+  const monthlyCounts = Array(12).fill(0);
+  if (!state.cookingLogs) return monthlyCounts;
+  
+  const logs = state.cookingLogs.filter(log => {
+    if (log.menuId !== menuId) return false;
+    if (!log.date) return false;
+    // YYYY-MM-DD フォーマットを安全にパース
+    const parts = log.date.split('-');
+    if (parts.length < 1) return false;
+    const logYear = parseInt(parts[0], 10);
+    return logYear === year;
+  });
+  
+  logs.forEach(log => {
+    const parts = log.date.split('-');
+    if (parts.length < 2) return;
+    const month = parseInt(parts[1], 10) - 1; // 0-indexed
+    if (month >= 0 && month < 12) {
+      monthlyCounts[month] += Number(log.quantity) || 0;
+    }
+  });
+  
+  return monthlyCounts;
+};
+
+const getYearlyTotal = (menuId, year = currentYear.value) => {
+  return getMonthlyServingData(menuId, year).reduce((sum, val) => sum + val, 0);
+};
+
+const getBarHeight = (count, data) => {
+  const max = Math.max(...data);
+  if (max === 0) return '0%';
+  return `${Math.max(4, (count / max) * 100)}%`; // 最低でもわずかに4%表示させて視認性を確保
+};
+
+// 検証用：デモ提供実績の自動生成
+const generateDemoData = (menuId) => {
+  if (confirm('過去12ヶ月分のリアルな提供実績（計約350食前後、なだらかな増加トレンド）をシミュレーション生成し、グラフや監査用テーブルの挙動を確認しますか？')) {
+    // 1月〜12月のリアルな推移
+    const baseCounts = [18, 22, 20, 28, 25, 36, 32, 45, 38, 48, 40, 52];
+    
+    // 既存の調理ログを安全にクリアして重複を防ぐ (readonly制約をアクションを介して回避)
+    const logsToDelete = state.cookingLogs.filter(log => log.menuId === menuId);
+    logsToDelete.forEach(log => {
+      restaurantStore.deleteCookingLog(log.id);
+    });
+
+    for (let month = 0; month < 12; month++) {
+      const monthStr = String(month + 1).padStart(2, '0');
+      const randomFluctuation = Math.floor(Math.random() * 8) - 4; // -4〜+4のゆらぎ
+      const quantity = Math.max(5, baseCounts[month] + randomFluctuation);
+      const date = `${currentYear.value}-${monthStr}-15`;
+
+      // このメニューのレシピから有機JAS原材料のロット詳細情報を自動補完
+      const menu = state.menus.find(m => m.id === menuId);
+      let lotDetails = '';
+      if (menu && menu.recipe) {
+        const lotParts = menu.recipe.map(item => {
+          const ing = ingredients.value.find(i => i.id === item.ingredientId);
+          if (ing && ing.type === 'organic') {
+            const sampleLots = {
+              '有機たまねぎ': 'KIRI-ONION-05',
+              '有機トウニュウ900': 'MEIRAKU-SOY-12',
+              '有機カラーピーマンB 5kg': 'NABEYAMA-PEP-08',
+              '有機ピーマンB': 'NABEYAMA-GPEP-02',
+              '有機トーホー クインテット 有機/FTフローラル豆 300g': 'TOHO-BEAN-22',
+              '有機テンメンジャン 1kg 有機 木': 'NISHIHARA-TMJ-15'
+            };
+            const lotNum = sampleLots[ing.name] || 'LOT-AUTO-2026';
+            return `${ing.name}: ${lotNum}`;
+          }
+          return null;
+        }).filter(p => p !== null);
+        lotDetails = lotParts.join(', ');
+      }
+
+      restaurantStore.addCookingLog({
+        menuId,
+        date,
+        quantity,
+        isUtensilsClean: true,
+        isIngredientVerified: true,
+        lotDetails: lotDetails || '一般原材料のみ',
+        checkedBy: state.restaurantInfo.manager || '角田 健一'
+      });
+    }
+    
+    alert('過去12ヶ月分のデモ提供実績データを自動生成しました！\n（ダッシュボード、グラフ、監査用トレーサビリティチェーンに即座に反映されます）');
+  }
+};
+
+
+// JAS適合有機デモメニューの一括生成
+const injectDemoMenus = () => {
+  if (confirm('JAS基準に100%適合した、おいしそうなオーガニックメニュー（3種類）のデモレシピカードを一括登録しますか？\n（すでに登録されている原材料マスターの「たまねぎ」「豆乳」「カラーピーマン」等と自動的に連動します）')) {
+    
+    // 原材料マスターから対象 of 材料IDを探し、なければデモ用マスターをその場で補完する親切設計
+    const getIngIdByName = (keywords, defaultName, defaultSupplier, isSaltWater = false) => {
+      const found = state.ingredients.find(ing => 
+        keywords.some(k => ing.name.includes(k))
+      );
+      if (found) return found.id;
+      
+      const added = restaurantStore.addIngredient({
+        name: defaultName,
+        supplier: defaultSupplier,
+        type: isSaltWater ? 'salt_water' : 'organic',
+        hasCertificate: true,
+        certificateExpiry: '',
+        hasJasLabel: true
+      });
+      return added.id;
+    };
+
+    // 既存マスターから関連する原材料を検索・確保
+    const onionId = getIngIdByName(['たまねぎ', 'タマネギ', '玉ねぎ'], '有機たまねぎ', '肥後和裕');
+    const soyId = getIngIdByName(['トウニュウ', '豆乳', 'とうにゅう'], '有機トウニュウ900', 'めいらく');
+    const pepperId = getIngIdByName(['カラーピーマン', 'カラーピーマンB'], '有機カラーピーマンB 5kg', '（有）なべやま');
+    const greenPepperId = getIngIdByName(['ピーマンB', 'ピーマン'], '有機ピーマンB', '（有）なべやま');
+    const beanId = getIngIdByName(['FTフローラル', 'フローラル豆', 'クインテット'], '有機トーホー クインテット 有機/FTフローラル豆 300g', 'トーホー');
+    const tenmenId = getIngIdByName(['テンメンジャン', 'てんめんじゃん'], '有機テンメンジャン 1kg 有機 木', '西原商会');
+    const saltId = getIngIdByName(['塩', '食塩', '自然海塩'], '自然海塩', '日本海水 (水塩除外)', true);
+    const waterId = getIngIdByName(['水', '天然水', '湧水'], '霧島湧水ミネラル天然水', '霧島湧水 (水塩除外)', true);
+
+    const demoMenus = [
+      {
+        name: '有機たまねぎと極上豆乳のオーガニックポタージュ',
+        price: 780,
+        isOrganicClaim: true,
+        description: '鹿児島産の有機たまねぎをじっくり炒めて甘みを最大限に引き出し、有機JAS適合の濃厚豆乳とブレンドした、心も体も温まるプレミアムポタージュです。',
+        recipe: [
+          { ingredientId: onionId, amount: 120 },
+          { ingredientId: soyId, amount: 150 },
+          { ingredientId: saltId, amount: 3 },
+          { ingredientId: waterId, amount: 100 }
+        ],
+        category: '有機料理スペック',
+        changeDetails: '新規開発・JAS適合テスト',
+        targetCreatedDate: '2026-05-10',
+        startDate: '2026-05-15',
+        reviewDate: '2026-05-13',
+        deadline: '2026-12-31',
+        creatorApproved: '鈴木 美咲',
+        managerApproved: '角田 健一',
+        courseTargetNum: '年間3600食',
+        singleTargetNum: '年間120食',
+        displayPeriod: '通年',
+        displayMethod: '卓上POPおよびメニュー表に掲載',
+        displayStyle: '有機JASマークと説明文を表示',
+        cookingInstructions: '1. 有機たまねぎを繊維に沿ってスライスし、少量の水で極弱火で飴色になるまで40分ソテーする。\n2. 有機豆乳、天然水、自然海塩を加え、75度以下で温める（沸騰させないことで風味を維持）。\n3. ハンドブレンダーで極限までなめらかに乳化させる。調理器具はすべて有機専用を徹底。',
+        remarks: '【JAS監査ポイント】豆乳の有機格付証明書とたまねぎの生産履歴を紐付けて確認。調理用器具は一般用と完全色分け（緑色）。'
+      },
+      {
+        name: '贅沢有機ピーマンとカラーピーマンの彩り温野菜サラダ',
+        price: 950,
+        isOrganicClaim: true,
+        description: '「なべやま農園」から毎朝届く新鮮な有機ピーマンと有機カラーピーマンを丸ごと使用。素材本来の甘みとほのかな苦味を、極シンプルな自然塩でお楽しみください。',
+        recipe: [
+          { ingredientId: pepperId, amount: 50 },
+          { ingredientId: greenPepperId, amount: 50 },
+          { ingredientId: saltId, amount: 2 }
+        ],
+        category: '有機料理スペック',
+        changeDetails: '新規登録',
+        targetCreatedDate: '2026-05-11',
+        startDate: '2026-05-15',
+        reviewDate: '2026-05-13',
+        deadline: '2026-12-31',
+        creatorApproved: '鈴木 美咲',
+        managerApproved: '角田 健一',
+        courseTargetNum: '年間2400食',
+        singleTargetNum: '年間80食',
+        displayPeriod: '夏期限定',
+        displayMethod: '黒板おすすめメニューに記載',
+        displayStyle: '「有機JAS認定原材料使用」と記載',
+        cookingInstructions: '1. 有機ピーマン、有機カラーピーマンは流水で丁寧に洗浄。芯をくり抜き、幅1cmの輪切りにする。\n2. 蒸し器（有機専用）にて強火で1分30秒蒸し上げ、余熱で火を通す。\n3. 自然海塩を全体に軽く振り、速やかに提供する。',
+        remarks: '【JAS監査ポイント】生鮮八百屋なべやまの格付マーク（JASシール）の貼付確認および現物写真撮影。'
+      },
+      {
+        name: '有機FTフローラル豆と春野菜のテンメンジャン仕立て',
+        price: 1380,
+        isOrganicClaim: true,
+        description: 'トーホーの希少な有機FTフローラル豆をふんだんに使い、西原商会こだわりの有機テンメンジャンで香り高く炒め上げました。深いコクと豆の華やかな香りが響き合う一品。',
+        recipe: [
+          { ingredientId: beanId, amount: 90 },
+          { ingredientId: tenmenId, amount: 25 },
+          { ingredientId: waterId, amount: 15 }
+        ],
+        category: '有機料理スペック',
+        changeDetails: 'レシピ見直しによる新規JAS適合',
+        targetCreatedDate: '2026-05-12',
+        startDate: '2026-05-16',
+        reviewDate: '2026-05-13',
+        deadline: '2026-12-31',
+        creatorApproved: '鈴木 美咲',
+        managerApproved: '角田 健一',
+        courseTargetNum: '年間1800食',
+        singleTargetNum: '年間50食',
+        displayPeriod: '通年',
+        displayMethod: '定番グランドメニューに掲載',
+        displayStyle: '有機JASメニュー適合マークを付与',
+        cookingInstructions: '1. 有機フローラル豆は硬めに下茹でする（水切りを徹底）。\n2. 熱した中華鍋（一般品調理後は都度洗浄・アルコール消毒したもの）で豆を強火で15秒ソテー。\n3. 有機テンメンジャンを水で溶き、鍋肌から加えて一気に絡める。',
+        remarks: '【JAS監査ポイント】テンメンジャンおよびフローラル豆の有機格付シール（JASマーク貼付）のロット追跡が合格条件。'
+      }
+    ];
+
+    demoMenus.forEach(menu => {
+      // 重複チェック (readonlyなstateへの直接pushは避け、addMenuアクションを利用)
+      if (!state.menus.some(m => m.name === menu.name)) {
+        restaurantStore.addMenu(menu);
+      }
+    });
+
+    alert('JAS適合の最高級デモメニュー3品を一括で生成しました！\n実際の原材料マスター（なべやま、めいらく、西原商会等）と100%自動連動し、JAS適合割合も完全検証済みの綺麗なレシピカードがお手元に届きました。');
+  }
+};
+
+// 年度ごとのフォルダ開閉状態 (v1.9.2 配列による完全なリアクティビティ保証)
+const expandedYears = ref([]);
+
+const isYearExpanded = (year) => {
+  return expandedYears.value.includes(year);
+};
+
+const toggleYearFolder = (year) => {
+  if (expandedYears.value.includes(year)) {
+    expandedYears.value = expandedYears.value.filter(y => y !== year);
+  } else {
+    expandedYears.value = [...expandedYears.value, year];
+  }
+};
+
+// menusByYearが更新された際、初期状態で最新の年度フォルダを自動展開しておくおもてなしロジック
+watch(menusByYear, (newVal) => {
+  const years = Object.keys(newVal);
+  if (years.length > 0) {
+    // まだ何も開閉状態が初期化されていない場合のみ最新年度を展開
+    if (expandedYears.value.length === 0) {
+      expandedYears.value = [years[0]];
+    }
+  }
+}, { immediate: true });
+
+// レシピ行操作用
+const addRecipeRow = () => {
+  form.value.recipe.push({ ingredientId: ingredients.value[0]?.id || '', amount: 0 });
+};
+
+const removeRecipeRow = (index) => {
+  form.value.recipe.splice(index, 1);
+};
+
+// リアルタイムのJAS有機割合シミュレーター
+const simulationResult = computed(() => {
+  return restaurantStore.calculateOrganicRatio(form.value.recipe);
+});
+
+// モーダルオープン (新規)
+const openAddModal = () => {
+  isEditing.value = false;
+  currentId.value = null;
+  activeFormTab.value = 'basic';
+  form.value = {
+    name: '',
+    price: 1180,
+    isOrganicClaim: true,
+    description: '',
+    recipe: [
+      { ingredientId: ingredients.value[0]?.id || '', amount: 100 }
+    ],
+    category: '有機料理スペック',
+    changeDetails: '新規作成',
+    targetCreatedDate: new Date().toISOString().split('T')[0],
+    startDate: new Date().toISOString().split('T')[0],
+    reviewDate: new Date().toISOString().split('T')[0],
+    deadline: '',
+    creatorApproved: state.restaurantInfo.grader || '鈴木 美咲',
+    managerApproved: state.restaurantInfo.manager || '角田 健一',
+    courseTargetNum: '年間3600食',
+    singleTargetNum: '年間60食',
+    displayPeriod: '通年',
+    displayMethod: 'メニューに掲載',
+    displayStyle: '記号により表示',
+    cookingInstructions: '',
+    remarks: '',
+    imageUrl: '',
+    year: new Date().getFullYear().toString()
+  };
+  errorMessage.value = '';
+  showRecipeModal.value = true;
+};
+
+// モーダルオープン (編集)
+const openEditModal = (menu) => {
+  isEditing.value = true;
+  currentId.value = menu.id;
+  activeFormTab.value = 'basic';
+  form.value = {
+    name: menu.name,
+    price: menu.price,
+    isOrganicClaim: menu.isOrganicClaim,
+    description: menu.description,
+    recipe: menu.recipe.map(item => ({ ...item })),
+    
+    // JAS 0004 追加項目
+    category: menu.category || '有機料理スペック',
+    changeDetails: menu.changeDetails || '',
+    targetCreatedDate: menu.targetCreatedDate || '',
+    startDate: menu.startDate || '',
+    reviewDate: menu.reviewDate || '',
+    deadline: menu.deadline || '',
+    creatorApproved: menu.creatorApproved || '鈴木 美咲',
+    managerApproved: menu.managerApproved || '角田 健一',
+    courseTargetNum: menu.courseTargetNum || '年間3600食',
+    singleTargetNum: menu.singleTargetNum || '年間60食',
+    displayPeriod: menu.displayPeriod || '通年',
+    displayMethod: menu.displayMethod || 'メニューに掲載',
+    displayStyle: menu.displayStyle || '記号により表示',
+    cookingInstructions: menu.cookingInstructions || '',
+    remarks: menu.remarks || '',
+    imageUrl: menu.imageUrl || '',
+    year: menu.year || new Date().getFullYear().toString()
+  };
+  if (form.value.recipe.length === 0) {
+    addRecipeRow();
+  }
+  errorMessage.value = '';
+  showRecipeModal.value = true;
+};
+
+// 帳票表示オープン
+const openSpecSheetModal = (menu) => {
+  selectedMenuForSpec.value = menu;
+  showSpecSheet.value = true;
+};
+
+// 保存アクション
+const saveMenu = () => {
+  if (!form.value.name.trim()) {
+    errorMessage.value = 'メニュー名を入力してください。';
+    return;
+  }
+  if (form.value.recipe.some(r => !r.ingredientId || r.amount <= 0)) {
+    errorMessage.value = 'レシピのすべての原材料について、正しい原材料の選択と0より大きい重量を設定してください。';
+    return;
+  }
+
+  try {
+    if (isEditing.value) {
+      restaurantStore.updateMenu(currentId.value, form.value);
+    } else {
+      restaurantStore.addMenu(form.value);
+    }
+    showRecipeModal.value = false;
+    showModal.value = false;
+  } catch (err) {
+    errorMessage.value = err.message;
+  }
+};
+
+// 削除アクション
+const deleteMenu = (id, name) => {
+  if (confirm(`メニュー「${name}」を削除してもよろしいですか？`)) {
+    restaurantStore.deleteMenu(id);
+  }
+};
+
+const getIngredientType = (id) => {
+  const ing = state.ingredients.find(i => i.id === id);
+  return ing ? ing.type : 'general';
+};
+
+// --- 配合デザイナーモーダル用アクション群 (v1.1.0) ---
+const addRecipeModalRow = () => {
+  recipeModalForm.value.recipe.push({ ingredientId: ingredients.value[0]?.id || '', amount: 100 });
+};
+
+const removeRecipeModalRow = (index) => {
+  recipeModalForm.value.recipe.splice(index, 1);
+};
+
+const openRecipeDesigner = (menu = null) => {
+  if (menu) {
+    // メニューカードから直接配合調整を開く
+    recipeModalForm.value = {
+      menuId: menu.id,
+      name: menu.name,
+      recipe: menu.recipe.map(item => ({ ...item }))
+    };
+  } else {
+    // 新規登録・編集モーダルから配合調整を別窓で開く
+    recipeModalForm.value = {
+      menuId: null,
+      name: form.value.name || '新規メニュー',
+      recipe: form.value.recipe.map(item => ({ ...item }))
+    };
+  }
+  showRecipeModal.value = true;
+};
+
+const saveRecipeDesigner = () => {
+  if (recipeModalForm.value.recipe.some(r => !r.ingredientId || r.amount <= 0)) {
+    alert('レシピのすべての原材料について、正しい原材料の選択と0より大きい重量を設定してください。');
+    return;
+  }
+
+  if (recipeModalForm.value.menuId) {
+    // 既存メニューの直接レシピ更新
+    try {
+      const menuToUpdate = state.menus.find(m => m.id === recipeModalForm.value.menuId);
+      if (menuToUpdate) {
+        restaurantStore.updateMenu(recipeModalForm.value.menuId, {
+          ...menuToUpdate,
+          recipe: recipeModalForm.value.recipe
+        });
+      }
+      showRecipeModal.value = false;
+    } catch (err) {
+      alert(err.message);
+    }
+  } else {
+    // 新規・編集モーダル内での配合情報の一時ストック（親フォームに反映）
+    form.value.recipe = recipeModalForm.value.recipe.map(item => ({ ...item }));
+    showRecipeModal.value = false;
+  }
+};
+
+const simulationResultForModal = computed(() => {
+  return restaurantStore.calculateOrganicRatio(recipeModalForm.value.recipe);
+});
+
+const handlePrint = () => {
+  window.print();
+};
+
+// 調理方法のテキストエリアで改行時に自動で番号を振る (v1.3.1)
+const handleCookingInstructionsKeydown = (e) => {
+  const textarea = e.target;
+  const val = textarea.value;
+  const start = textarea.selectionStart;
+  
+  // 現在の行（カーソルがある行）を取得
+  const textBeforeCursor = val.substring(0, start);
+  const lastLineBreak = textBeforeCursor.lastIndexOf('\n');
+  const currentLine = textBeforeCursor.substring(lastLineBreak + 1);
+  
+  // 「数字. 」で始まっているか判定
+  const match = currentLine.match(/^(\d+)\.\s/);
+  if (match) {
+    e.preventDefault(); // デフォルトの改行を防止
+    const nextNum = parseInt(match[1], 10) + 1;
+    const insertText = `\n${nextNum}. `;
+    
+    // 文字列の挿入
+    form.value.cookingInstructions = val.substring(0, start) + insertText + val.substring(start);
+    
+    // カーソル位置を調整
+    setTimeout(() => {
+      textarea.selectionStart = textarea.selectionEnd = start + insertText.length;
+    }, 0);
+  }
+};
+
+
+
+// --- 料理写真のアップロード機能 (v1.4.0 追加) ---
+const handleMenuImageUpload = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    alert('画像ファイルを選択してください。');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    form.value.imageUrl = event.target.result;
+  };
+  reader.readAsDataURL(file);
+};
+
+// --- PDF解析・アーカイブ機能 (v1.3.1 追加) ---
+const selectedFile = ref(null);
+const isAnalyzing = ref(false);
+const archiveMenus = ref({}); // { '2024': [...], '2025': [...] }
+
+const handlePdfUpload = (e) => {
+  const file = e.target.files[0];
+  if (file && file.type === 'application/pdf') {
+    selectedFile.value = file;
+  } else {
+    alert('PDFファイルを選択してください。');
+  }
+};
+
+const fileToBase64 = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+      const base64 = reader.result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = error => reject(error);
+  });
+};
+
+// アーカイブメニューを引用して新規メニューを作成
+const importArchiveMenu = (archiveMenu) => {
+  form.value = {
+    name: archiveMenu.name || '',
+    price: archiveMenu.price || 0,
+    isOrganicClaim: true,
+    description: archiveMenu.description || '',
+    recipe: [],
+    category: archiveMenu.category || '有機料理スペック',
+    changeDetails: '前年スペックからの引用',
+    targetCreatedDate: new Date().toISOString().split('T')[0],
+    startDate: new Date().toISOString().split('T')[0],
+    reviewDate: new Date().toISOString().split('T')[0],
+    deadline: '',
+    creatorApproved: state.restaurantInfo.grader || '鈴木 美咲',
+    managerApproved: state.restaurantInfo.manager || '角田 健一',
+    courseTargetNum: '年間3600食',
+    singleTargetNum: '年間60食',
+    displayPeriod: '通年',
+    displayMethod: 'メニューに掲載',
+    displayStyle: '記号により表示',
+    cookingInstructions: archiveMenu.cookingInstructions || '',
+    remarks: '',
+    year: archiveMenu.year || new Date().getFullYear().toString()
+  };
+
+  // 原材料の紐付け - 有機/非有機を正確に反映しながら重複を避ける
+  if (archiveMenu.recipe) {
+    archiveMenu.recipe.forEach(item => {
+      // PDFで指定された有機/非有機で判定、PDFに記載がない場合は食材名から判定
+      const isOrganic = item.isOrganic !== undefined ? item.isOrganic : item.ingredientName.includes('有機');
+      const targetType = isOrganic ? 'organic' : 'general';
+
+      // マスターから、名前とタイプの両方が一致する食材を探す
+      let matchedIng = state.ingredients.find(ing =>
+        (ing.name === item.ingredientName || ing.name.includes(item.ingredientName) || item.ingredientName.includes(ing.name)) &&
+        ing.type === targetType
+      );
+
+      // 名前は一致するが、タイプが異なる場合、または見つからない場合は新規作成
+      if (!matchedIng) {
+        matchedIng = restaurantStore.addIngredient({
+          name: item.ingredientName,
+          supplier: '（PDF解析自動生成）',
+          type: targetType,
+          hasCertificate: isOrganic ? false : undefined,
+          certificateExpiry: '',
+          hasJasLabel: isOrganic ? false : undefined
+        });
+      }
+
+      form.value.recipe.push({
+        ingredientId: matchedIng.id,
+        amount: item.amount
+      });
+    });
+  }
+
+  if (form.value.recipe.length === 0) {
+    addRecipeRow();
+  }
+
+  isEditing.value = false;
+  currentId.value = null;
+  activeFormTab.value = 'basic';
+  errorMessage.value = '';
+  showRecipeModal.value = true;
+};
+
+const analyzePdf = async () => {
+  if (!selectedFile.value) return;
+  
+  const apiKey = state.restaurantInfo.geminiApiKey;
+  if (!apiKey) {
+    alert('店舗設定でGemini APIキーを登録してください。');
+    return;
+  }
+  
+  isAnalyzing.value = true;
+  
+  try {
+    const base64Data = await fileToBase64(selectedFile.value);
+    
+    // Gemini API 呼び出し (最新のgemini-2.5-flashを使用)
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            {
+              inlineData: {
+                mimeType: "application/pdf",
+                data: base64Data
+              }
+            },
+            {
+              text: "あなたは有機JASレストランの監査スペシャリストです。提供されたPDF（料理スペック帳票）からレシピ情報を抽出し、JSON形式で返してください。\n\n【重要】PDFに記載されている「食材」「区分」「分量」の3列から、以下の情報を正確に抽出してください：\n- 食材名：PDFの「食材」列から抽出（『有機』『非有機』の接頭辞は除去して食材名のみ）\n- 有機/非有機：PDFの「区分」列に『有機』と明記されている場合は isOrganic: true、『非有機』と明記されている場合は isOrganic: false\n- 分量：PDFの「分量」列の数値\n\n返却は必ず以下のJSONフォーマットのみ（マークダウンの ```json の囲みは不要）で返してください。年度が不明な場合は '2024' としてください。\n\n{\n  '2024': [\n    {\n      'name': '料理名',\n      'category': 'カテゴリ',\n      'price': 1000,\n      'description': '説明',\n      'recipe': [\n        { 'ingredientName': '原材料名', 'amount': 100, 'isOrganic': true },\n        { 'ingredientName': '別の原材料', 'amount': 50, 'isOrganic': false }\n      ],\n      'cookingInstructions': '調理方法'\n    }\n  ]\n}"
+            }
+          ]
+        }],
+        generationConfig: {
+          responseMimeType: "application/json"
+        }
+      })
+    });
+    
+    const result = await response.json();
+    
+    if (result.error) {
+      throw new Error(result.error.message);
+    }
+    
+    const text = result.candidates[0].content.parts[0].text;
+    const parsedData = JSON.parse(text.trim());
+
+    console.log('Gemini API返却データ:', parsedData);
+    console.log('データ型:', typeof parsedData);
+    console.log('キー:', Object.keys(parsedData));
+
+    // パースしたデータをアーカイブに保存し、自動でメニューリストに追加 (v1.3.1 ユーザー要望)
+    archiveMenus.value = parsedData;
+    let addedCount = 0;
+
+    // 解析結果を自動でメニューリストに追加
+    for (const [year, menus] of Object.entries(parsedData)) {
+      console.log(`年度: ${year}, menus型:`, typeof menus, 'menus:', menus);
+      if (!Array.isArray(menus)) {
+        console.warn(`year ${year}のデータが配列ではありません。スキップします。`);
+        continue;
+      }
+      menus.forEach(archiveMenu => {
+        console.log('処理中のメニュー:', archiveMenu.name);
+        console.log('全食材の isOrganic フラグ:');
+        if (archiveMenu.recipe && archiveMenu.recipe.length > 0) {
+          archiveMenu.recipe.forEach((item, idx) => {
+            console.log(`  ${idx + 1}. ${item.ingredientName} (${item.amount}g): isOrganic=${item.isOrganic}`);
+          });
+        }
+
+        const newMenu = {
+          name: archiveMenu.name || '',
+          price: archiveMenu.price || 0,
+          isOrganicClaim: true,
+          description: archiveMenu.description || '',
+          recipe: [],
+          category: archiveMenu.category || '有機料理スペック',
+          changeDetails: '前年スペックからの引用',
+          targetCreatedDate: new Date().toISOString().split('T')[0],
+          startDate: new Date().toISOString().split('T')[0],
+          reviewDate: new Date().toISOString().split('T')[0],
+          deadline: '',
+          creatorApproved: state.restaurantInfo.grader || '鈴木 美咲',
+          managerApproved: state.restaurantInfo.manager || '角田 健一',
+          courseTargetNum: '年間3600食',
+          singleTargetNum: '年間60食',
+          displayPeriod: '通年',
+          displayMethod: 'メニューに掲載',
+          displayStyle: '記号により表示',
+          cookingInstructions: archiveMenu.cookingInstructions || '',
+          remarks: '',
+          year: year // 年度情報を保存
+        };
+
+        // 原材料の紐付け - 有機/非有機を正確に反映しながら重複を避ける
+        if (archiveMenu.recipe) {
+          archiveMenu.recipe.forEach(item => {
+            // PDFで指定された有機/非有機で判定、PDFに記載がない場合は食材名から判定
+            const isOrganic = item.isOrganic !== undefined ? item.isOrganic : item.ingredientName.includes('有機');
+            const targetType = isOrganic ? 'organic' : 'general';
+
+            // マスターから、名前とタイプの両方が一致する食材を探す
+            let matchedIng = state.ingredients.find(ing =>
+              (ing.name === item.ingredientName || ing.name.includes(item.ingredientName) || item.ingredientName.includes(ing.name)) &&
+              ing.type === targetType
+            );
+
+            // 名前は一致するが、タイプが異なる場合、または見つからない場合は新規作成
+            if (!matchedIng) {
+              matchedIng = restaurantStore.addIngredient({
+                name: item.ingredientName,
+                supplier: '（PDF解析自動生成）',
+                type: targetType,
+                hasCertificate: isOrganic ? false : undefined,
+                certificateExpiry: '',
+                hasJasLabel: isOrganic ? false : undefined
+              });
+            }
+
+            newMenu.recipe.push({
+              ingredientId: matchedIng.id,
+              amount: item.amount
+            });
+          });
+        }
+
+        restaurantStore.addMenu(newMenu);
+        addedCount++;
+      });
+    }
+
+    alert(`${addedCount}件のレシピを自動追加しました！メニューカードを確認してください。`);
+  } catch (error) {
+    alert('分析中にエラーが発生しました: ' + error.message);
+    console.error(error);
+  } finally {
+    isAnalyzing.value = false;
+  }
+};
+
+// JAS 0004 適合表示記号（壺のマーク）の数と範囲テキスト算出ヘルパー (v1.4.0 追加)
+const getTsuboCount = (ratio) => {
+  const r = parseFloat(ratio) || 0;
+  if (r >= 95) return 4;
+  if (r >= 80) return 3;
+  if (r >= 50) return 2;
+  return 1;
+};
+
+const getTsuboRangeText = (ratio) => {
+  const r = parseFloat(ratio) || 0;
+  if (r >= 95) return '95%以上';
+  if (r >= 80) return '80%以上95%未満';
+  if (r >= 50) return '50%以上80%未満';
+  return '50%未満';
+};
+
+// JAS 料理スペック帳票 A4二列レイアウト用のデータ成形 (v1.4.0 追加)
+const selectedMenuSpecData = computed(() => {
+  const menu = selectedMenuForSpec.value;
+  if (!menu) return null;
+
+  // 1. 原材料配合（最大21行の枠組みを作成）
+  // 水・食塩を除く比率を正しく計算するための詳細リスト
+  const details = menu.recipeDetails || [];
+  
+  // 左右11行ずつの枠 (左: 0-10, 右: 11-20)
+  const leftRows = [];
+  const rightRows = [];
+
+  for (let i = 0; i < 11; i++) {
+    // 左側 (No.1〜11)
+    if (i < details.length) {
+      leftRows.push({
+        no: i + 1,
+        name: details[i].name,
+        typeText: details[i].type === 'organic' ? '有機' : (details[i].type === 'salt_water' ? '水塩' : '非有機'),
+        amount: details[i].amount,
+        unit: 'g'
+      });
+    } else {
+      leftRows.push({ no: i + 1, name: '', typeText: '', amount: '', unit: '' });
+    }
+
+    // 右側 (No.12〜21)
+    const rightIndex = i + 11;
+    if (rightIndex < 21) {
+      if (rightIndex < details.length) {
+        rightRows.push({
+          no: rightIndex + 1,
+          name: details[rightIndex].name,
+          typeText: details[rightIndex].type === 'organic' ? '有機' : (details[rightIndex].type === 'salt_water' ? '水塩' : '非有機'),
+          amount: details[rightIndex].amount,
+          unit: 'g'
+        });
+      } else {
+        rightRows.push({ no: rightIndex + 1, name: '', typeText: '', amount: '', unit: '' });
+      }
+    }
+  }
+
+  // 2. 作り方（最大7行の枠組みを作成）
+  // markdownの箇条書きや改行区切りの作り方を配列化
+  const instructions = menu.cookingInstructions
+    ? menu.cookingInstructions.split('\n').map(line => line.replace(/^\d+[\.．]\s*/, '').trim()).filter(Boolean)
+    : [];
+  const instructionRows = [];
+  for (let i = 0; i < 7; i++) {
+    instructionRows.push({
+      no: i + 1,
+      text: i < instructions.length ? instructions[i] : ''
+    });
+  }
+
+  // 3. 和暦の日付表記（おもてなし和暦自動変換）
+  const toWareki = (dateStr) => {
+    if (!dateStr) return '未設定';
+    try {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return dateStr;
+      
+      const year = date.getFullYear();
+      let reiwaYear = year - 2018;
+      let warekiStr = `令和${reiwaYear}年`;
+      if (reiwaYear === 1) warekiStr = '令和元年';
+      
+      return `${warekiStr}${date.getMonth() + 1}月${date.getDate()}日`;
+    } catch (e) {
+      return dateStr;
+    }
+  };
+
+  return {
+    leftRows,
+    rightRows,
+    instructionRows,
+    targetCreatedDateWareki: toWareki(menu.targetCreatedDate),
+    startDateWareki: toWareki(menu.startDate),
+    reviewDateWareki: toWareki(menu.reviewDate),
+    totalWeight: menu.totalWeight,
+    organicWeight: menu.organicWeight,
+    organicRatio: menu.organicRatio,
+    generalWeight: (menu.totalWeight - menu.organicWeight).toFixed(1),
+    generalRatio: (100 - menu.organicRatio).toFixed(1)
+  };
+});
+</script>
+
+<template>
+  <div class="animate-fade-in">
+    <div class="view-header mb-6 no-print">
+      <div class="header-title">
+        <h2 class="flex items-center gap-2"><FileText :size="24" /> 有機料理スペック（配合）管理</h2>
+        <p class="text-sub">前年の料理スペック（エクセル/PDF）をデジタル完全統合。JAS 0004基準の承認、配合、目標、製造プロセスを一元管理し、監査時そのまま出力できます。</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button class="btn btn-outline flex items-center gap-1" style="background-color: #fffbeb; border-color: #f59e0b; color: #b45309;" @click="injectDemoMenus">
+          <Sparkles :size="16" class="text-amber-500" /> JASデモレシピを一括生成
+        </button>
+        <button class="btn btn-primary" @click="openAddModal">
+          <Plus :size="18" /> 新規スペック登録
+        </button>
+      </div>
+    </div>
+
+    <!-- 前年データPDFのAI解析セクション (v1.3.1 追加) -->
+    <div class="card mb-6 no-print" style="background-color: #f8fafc; border: 1px dashed var(--primary-border);">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h3 class="flex items-center gap-2 text-forest mb-1" style="color: var(--primary); font-weight: 700; font-size: 1.25rem;"><Sparkles :size="20" /> 前年スペック（PDF）のAI完全統合</h3>
+          <p class="text-sub" style="font-size: 0.85rem;">前年の料理スペックPDFをアップロードすると、AIが解析してレシピデータを自動抽出します。</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <input type="file" id="pdf-upload" accept="application/pdf" class="hidden" @change="handlePdfUpload" style="display: none;" />
+          <label for="pdf-upload" class="btn btn-outline flex items-center gap-1" style="cursor: pointer; background: white;">
+            <FileText :size="16" /> PDFを選択
+          </label>
+          <button class="btn btn-primary" :disabled="!selectedFile || isAnalyzing" @click="analyzePdf">
+            <span v-if="isAnalyzing">解析中...</span>
+            <span v-else>AIで解析する</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 選択されたファイル名表示 -->
+      <div v-if="selectedFile" class="text-xs text-sub mb-3 flex items-center gap-1" style="font-size: 0.75rem; color: var(--text-sub);">
+        <Check :size="12" class="text-success" /> 選択中: <strong>{{ selectedFile.name }}</strong> ({{ (selectedFile.size / 1024).toFixed(1) }} KB)
+      </div>
+    </div>
+
+    <!-- JAS 0004 適合表示記号（壺マーク＋星）の凡例パネル (no-print) (v1.4.0 追加) (v1.9.6 淡色若竹オーガニックグリーン化) -->
+    <div class="card mb-6 no-print" style="background: linear-gradient(135deg, #f3faf5 0%, #e7f5ec 100%); border: 1.5px solid #bbf7d0; padding: 1.25rem; border-radius: var(--radius-md); box-shadow: var(--shadow-sm);">
+      <div style="display: flex; align-items: flex-start; gap: 0.75rem; border-bottom: 1.5px dashed #bbf7d0; padding-bottom: 0.75rem; margin-bottom: 0.75rem;">
+        <img src="/tsubo.png" style="width: 24px; height: 28px; object-fit: contain; display: inline-block; vertical-align: middle;" />
+        <div>
+          <h4 style="margin: 0 0 0.25rem 0; font-size: 0.95rem; font-weight: bold; color: #801c15; display: flex; align-items: center; gap: 0.25rem;">
+            JAS 0004 有機料理適合表示記号（壺マーク・★星付き）の凡例
+          </h4>
+          <p style="font-size: 0.75rem; color: #5c3d2e; margin: 0; line-height: 1.45;">
+            JAS 0004（有機料理を提供する飲食店等の管理方法）の基準に基づき、顧客に対して有機食材の配合割合を直感的に示すため、黒酢の「アマン壺（てっぺんに星の飾り付き）」をモチーフにした記号表示を行います。大きさ・形状・配色を統一し、割合区分に応じて壺の数を変えてメニューや看板に表示します。
+            <strong style="color: #047857; display: block; margin-top: 2px;">※80%以上（壺3つ以上）で有機適合メニューとなります。</strong>
+          </p>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem;">
+        <div v-for="rule in [
+          { ratio: '95% 以上 (壺 4個)', count: 4, bg: '#f0fdf4', border: '#bbf7d0', text: '#15803d', label: '最上位適合' },
+          { ratio: '80% 以上 95% 未満 (壺 3個)', count: 3, bg: '#ecfdf5', border: '#a7f3d0', text: '#047857', label: '有機適合' },
+          { ratio: '50% 以上 80% 未満 (壺 2個)', count: 2, bg: '#fffbeb', border: '#fde68a', text: '#b45309', label: '一部適合' },
+          { ratio: '50% 未満 (壺 1個)', count: 1, bg: '#fafaf9', border: '#e7e5e4', text: '#57534e', label: '一般区分' }
+        ]" :key="rule.ratio" :style="{ background: rule.bg, borderColor: rule.border, color: rule.text }" style="padding: 0.65rem 0.85rem; border: 1.5px solid; border-radius: 8px; display: flex; flex-direction: column; gap: 0.5rem; justify-content: space-between; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); transition: transform 0.2s;">
+          <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+            <span style="font-size: 0.8rem; font-weight: bold;">{{ rule.ratio }}</span>
+            <span :style="{ background: rule.text, color: 'white' }" style="font-size: 0.6rem; padding: 0.1rem 0.35rem; border-radius: 4px; font-weight: bold; letter-spacing: 0.05em;">{{ rule.label }}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; border-top: 1.5px dashed rgba(0,0,0,0.04); padding-top: 0.5rem;">
+            <span style="font-size: 0.7rem; font-weight: 500; color: #8c786c;">壺表示:</span>
+            <div style="display: flex; gap: 3px;">
+              <img 
+                v-for="n in 4" 
+                :key="n" 
+                src="/tsubo.png" 
+                alt="tsubo" 
+                style="width: 22px; height: 26px; object-fit: contain; transition: opacity 0.2s;"
+                :style="{ opacity: n <= rule.count ? 1 : 0.12 }"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- メニューカードグリッド - 年度別グループ (no-print) (v1.9.0 フォルダアコーディオン化) -->
+    <div v-for="(menus, year) in menusByYear" :key="year" class="year-section mb-6" style="background: white; border: 1.5px solid #ebdcd0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);">
+      <!-- フォルダヘッダー (クリックで開閉) -->
+      <div 
+        @click="toggleYearFolder(year)" 
+        class="year-folder-header flex items-center justify-between no-print" 
+        style="background: linear-gradient(to right, #faf8f5, #f5f0e8); padding: 0.85rem 1.25rem; cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none; transition: background 0.2s; border-bottom: 1px solid #ebdcd0;"
+      >
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <span style="font-size: 1.6rem; line-height: 1;">{{ isYearExpanded(year) ? '📂' : '📁' }}</span>
+          <div style="display: flex; flex-direction: column; text-align: left;">
+            <h3 class="year-header font-bold" style="margin: 0; font-size: 1.05rem; font-weight: bold; color: #5c3d2e; border: none; padding: 0;">
+              {{ year === '登録年度なし' ? '登録年度なし' : `${year}年度` }} のスペック管理票
+            </h3>
+            <span style="font-size: 0.725rem; color: #8c786c; font-weight: 500; margin-top: 2px;">合計: {{ menus.length }}件の有機メニューが格納されています</span>
+          </div>
+        </div>
+        
+        <div style="display: flex; align-items: center; gap: 0.5rem; font-weight: bold; font-size: 0.8rem; color: #801c15;">
+          <span>{{ isYearExpanded(year) ? 'フォルダを閉じる ➖' : 'フォルダを開く ➕' }}</span>
+        </div>
+      </div>
+
+      <div v-show="isYearExpanded(year)" class="menu-grid mb-6 no-print" style="padding: 1.25rem; background: #faf9f6; margin-bottom: 0 !important; gap: 1.25rem;">
+        <div
+          v-for="menu in menus"
+          :key="menu.id"
+          :class="['card', 'menu-card', menu.hasDiscrepancy ? 'card-discrepancy' : (menu.isValidOrganic ? 'card-organic-valid' : '')]"
+        >
+        <!-- 有機表示と適合性インジケータ -->
+        <div class="menu-status-bar">
+          <div class="badges-row">
+            <span v-if="!menu.isOrganicClaim" class="badge badge-neutral">一般メニュー</span>
+            
+            <span v-if="menu.isValidOrganic" class="badge badge-success flex items-center gap-1">
+              <Check :size="12" /> JAS適合 ({{ menu.organicRatio }}%)
+            </span>
+          </div>
+        </div>
+
+        <div class="menu-details">
+          <div class="menu-title-row">
+            <h3 class="menu-name">{{ menu.name }}</h3>
+            <span class="menu-price">¥{{ menu.price.toLocaleString() }}</span>
+          </div>
+          <div class="menu-meta-pills mb-2">
+            <span class="meta-pill">{{ menu.category || '有機料理スペック' }}</span>
+            <span class="meta-pill" v-if="menu.reviewDate">見直し日: {{ menu.reviewDate }}</span>
+            <span class="meta-pill text-forest" v-if="menu.managerApproved">承認: {{ menu.managerApproved }}</span>
+          </div>
+          <p class="menu-desc">{{ menu.description || '説明文はありません。' }}</p>
+
+          <!-- レシピサマリー -->
+          <div class="recipe-summary-box mt-3">
+            <div class="summary-label flex items-center justify-between">
+              <span class="flex items-center gap-1"><Scale :size="14" /> 配合内訳 (水・塩除く {{ menu.totalWeight }}g)</span>
+              <span class="font-mono text-xs font-bold text-forest">有機 {{ menu.organicRatio }}%</span>
+            </div>
+            <div class="recipe-tags">
+              <div 
+                v-for="item in menu.recipeDetails" 
+                :key="item.ingredientId" 
+                :class="['recipe-tag-item', item.type === 'organic' ? 'org' : (item.type === 'salt_water' ? 'salt' : 'gen')]"
+              >
+                <span>{{ item.name }}</span>
+                <span class="weight">{{ item.amount }}g</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 壺のマークによる適合表示記号 (JAS 0004 準拠) (v1.4.0 追加) -->
+          <div class="tsubo-display-box mt-3 p-2.5 rounded-lg border flex items-center justify-between" style="background: #faf8f5; border: 1px solid #ebdcd0; display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 0.8rem; border-radius: 8px; margin-top: 0.75rem; box-shadow: var(--shadow-xs);">
+            <div class="flex flex-col gap-0.5" style="display: flex; flex-direction: column; gap: 2px;">
+              <span class="text-sub font-bold text-xs" style="color: #801c15; font-size: 0.7rem; font-weight: bold; letter-spacing: 0.03em;">JAS 0004 有機料理適合表示記号</span>
+              <span class="text-sub font-medium" style="color: #8c786c; font-size: 0.65rem;">壺の数: {{ getTsuboCount(menu.organicRatio) }}個 (有機食材 {{ getTsuboRangeText(menu.organicRatio) }})</span>
+            </div>
+            <div class="tsubo-icons-row flex gap-1" style="display: flex; gap: 0.25rem;">
+              <img 
+                v-for="n in 4" 
+                :key="n" 
+                src="/tsubo.png" 
+                alt="tsubo" 
+                style="width: 20px; height: 24px; object-fit: contain; transition: opacity 0.2s;"
+                :style="{ opacity: n <= getTsuboCount(menu.organicRatio) ? 1 : 0.15 }"
+              />
+            </div>
+          </div>
+
+          <!-- 提供実績・年間推移（おもてなしUXアコーディオン） -->
+          <div class="stats-toggle mt-3" @click.stop="toggleStats(menu.id)">
+            <button class="btn btn-outline btn-xs flex items-center gap-1 w-full justify-center" style="border-color: var(--primary-light, #bbf7d0); background: #f0fdf4;">
+              <TrendingUp :size="12" class="text-forest" />
+              <span class="font-semibold text-forest">{{ expandedStats[menu.id] ? '提供実績・年間推移を閉じる' : '提供実績・年間推移を表示' }}</span>
+            </button>
+          </div>
+
+          <div v-if="expandedStats[menu.id]" class="menu-stats-box mt-3 animate-fade-in">
+            <div class="stats-header flex items-center justify-between mb-2">
+              <span class="stats-title font-semibold text-xs text-sub">{{ currentYear }}年 提供実績 （合計: <strong class="text-forest font-bold text-sm">{{ getYearlyTotal(menu.id) }}食</strong>）</span>
+              <div class="year-selector" @click.stop>
+                <select v-model="currentYear" class="select-sm" style="font-size: 0.75rem; padding: 0.1rem 0.35rem; border-radius: 4px; border: 1px solid var(--border);">
+                  <option :value="2026">2026年</option>
+                  <option :value="2025">2025年</option>
+                  <option :value="2024">2024年</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- 提供数ゼロの際のシミュレーション用おもてなしデモボタン -->
+            <div v-if="getYearlyTotal(menu.id) === 0" class="empty-stats-tip mt-2 p-2.5 text-center" style="background-color: #fffbeb; border: 1px dashed #f59e0b; border-radius: 6px;" @click.stop>
+              <p class="text-xs text-amber-800 font-semibold mb-1">💡 現在、提供実績（調理記録）が登録されていません。</p>
+              <p class="text-sub" style="font-size: 0.65rem; margin-bottom: 0.5rem; line-height: 1.3; color: #b45309;">調理・提供点検で毎日の提供数を入力するか、以下のボタンから確認用のシミュレーションデータを生成できます。</p>
+              <button class="btn btn-warning btn-xs" style="font-size: 0.7rem; background-color: #f59e0b; border-color: #d97706; color: white; padding: 0.15rem 0.5rem; border-radius: 4px; font-weight: bold; cursor: pointer; transition: background-color 0.2s;" @click="generateDemoData(menu.id)">
+                🧪 過去12ヶ月分のデモ実績を自動生成する
+              </button>
+            </div>
+
+            <!-- CSSベースの美しい縦棒グラフ -->
+            <div class="monthly-trend-chart mt-3">
+              <div v-for="(count, idx) in getMonthlyServingData(menu.id)" :key="idx" class="chart-bar-col">
+                <div class="chart-bar-wrapper">
+                  <div 
+                    class="chart-bar" 
+                    :style="{ height: getBarHeight(count, getMonthlyServingData(menu.id)) }"
+                    :class="{ 'has-value': count > 0 }"
+                  >
+                    <span class="bar-tooltip">{{ count }}食</span>
+                  </div>
+                </div>
+                <span class="chart-month-label">{{ idx + 1 }}月</span>
+              </div>
+            </div>
+
+            <!-- 月別提供数テーブル -->
+            <table class="stats-mini-table mt-3">
+              <thead>
+                <tr>
+                  <th v-for="m in 12" :key="m">{{ m }}月</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td v-for="(count, idx) in getMonthlyServingData(menu.id)" :key="idx" :class="{'has-val': count > 0}">
+                    {{ count || '-' }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="menu-card-footer mt-4">
+          <span class="id-badge font-mono">{{ menu.id }}</span>
+          <div class="card-actions">
+            <button class="btn btn-outline btn-xs flex items-center gap-1" style="background-color: #f0fdf4; border-color: #bbf7d0; color: #166534;" @click="openEditModal(menu)">
+              <Scale :size="14" /> 配合調整
+            </button>
+            <button class="btn btn-outline btn-xs" @click="openEditModal(menu)">
+              <Edit3 :size="14" /> 編集
+            </button>
+            <button class="btn btn-primary btn-xs flex items-center gap-1" @click="openSpecSheetModal(menu)">
+              <FileText :size="14" /> JAS管理票
+            </button>
+            <button class="btn btn-danger btn-xs" @click="deleteMenu(menu.id, menu.name)" title="削除">
+              <Trash2 :size="14" />
+            </button>
+          </div>
+        </div>
+      </div>
+      </div>
+    </div>
+
+    <!-- 統合型・新規/編集モーダル (大画面配合デザイナーベース) (v1.3.1) -->
+    <Teleport to="body">
+      <div v-if="showRecipeModal" class="modal-backdrop no-print">
+      <div class="modal modal-xlarge recipe-designer-modal animate-fade-in-up" style="max-width: 1200px; width: 95vw; max-height: 90vh;">
+        <div class="modal-header" style="background: linear-gradient(135deg, #801c15 0%, #5c120d 100%); color: white; border-bottom: 2px solid #dcd1be;">
+          <h3 class="flex items-center gap-2 text-white" style="color: white; margin: 0; font-size: 1.25rem;">
+            <Sparkles :size="20" />
+            <span>{{ isEditing ? '有機料理スペック・配合の調整' : '新規有機料理スペック登録' }}</span>
+          </h3>
+          <button class="btn-close text-white" @click="showRecipeModal = false" style="filter: brightness(0) invert(1); background: transparent; border: none; cursor: pointer; color: white;"><X :size="20" /></button>
+        </div>
+
+        <div class="modal-body p-6 recipe-designer-body" style="overflow: hidden; display: flex; gap: 1.5rem; height: calc(90vh - 120px);">
+          <div class="designer-layout-grid" style="display: grid; grid-template-columns: 7fr 3fr; gap: 1.5rem; width: 100%; height: 100%;">
+            
+            <!-- 左側: フォームエリア (スクロール可能) -->
+            <div class="designer-left-card" style="overflow-y: auto; padding-right: 1rem;">
+              
+              <!-- 左側エリア内タブ選択 (v1.3.1) (v1.9.3 臙脂＆和風調和) -->
+              <div class="form-tabs mb-4" style="display: flex; gap: 0.5rem; border-bottom: 2px solid #ebdcd0; margin-bottom: 1.5rem; background: #faf8f5; padding: 0.5rem 0.5rem 0 0.5rem; border-radius: 6px 6px 0 0;">
+                <button :class="['tab-btn', activeFormTab === 'basic' ? 'active' : '']" @click="activeFormTab = 'basic'" :style="{ color: activeFormTab === 'basic' ? '#801c15' : '#64748b', borderBottomColor: activeFormTab === 'basic' ? '#801c15' : 'transparent' }" style="padding: 0.6rem 1.2rem; border: none; background: transparent; cursor: pointer; font-weight: 600; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s;">基本情報</button>
+                <button :class="['tab-btn', activeFormTab === 'recipe' ? 'active' : '']" @click="activeFormTab = 'recipe'" :style="{ color: activeFormTab === 'recipe' ? '#801c15' : '#64748b', borderBottomColor: activeFormTab === 'recipe' ? '#801c15' : 'transparent' }" style="padding: 0.6rem 1.2rem; border: none; background: transparent; cursor: pointer; font-weight: 600; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s;">原材料配合</button>
+                <button :class="['tab-btn', activeFormTab === 'jas' ? 'active' : '']" @click="activeFormTab = 'jas'" :style="{ color: activeFormTab === 'jas' ? '#801c15' : '#64748b', borderBottomColor: activeFormTab === 'jas' ? '#801c15' : 'transparent' }" style="padding: 0.6rem 1.2rem; border: none; background: transparent; cursor: pointer; font-weight: 600; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s;">JAS監査項目</button>
+              </div>
+
+              <!-- セクション1: 基本情報 -->
+              <div v-if="activeFormTab === 'basic'" class="form-section mb-6 animate-fade-in">
+                <h4 class="font-bold flex items-center gap-1 text-dark border-b pb-2 mb-4" style="font-weight: 700; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.5rem; margin-bottom: 1rem;"><FileText :size="18" /> 基本情報</h4>
+                
+                <div class="grid-2-col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                  <div class="form-group">
+                    <label class="required-field" style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; display: block;">料理名（JAS登録名称）</label>
+                    <input type="text" v-model="form.name" class="input-organic" placeholder="例: 有機野菜サラダ" />
+                  </div>
+                  <div class="form-group">
+                    <label class="required-field" style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; display: block;">提供価格 (税込)</label>
+                    <div class="input-with-icon" style="position: relative;">
+                      <span class="input-icon" style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); color: #64748b;">¥</span>
+                      <input type="number" v-model.number="form.price" min="0" class="input-organic" style="padding-left: 1.75rem;" />
+                    </div>
+                  </div>
+                </div>
+
+                <div class="grid-2-col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                  <div class="form-group">
+                    <label class="required-field" style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; display: block;">料理カテゴリ</label>
+                    <input type="text" v-model="form.category" class="input-organic" placeholder="例: 有機料理スペック" />
+                  </div>
+                  <div class="form-group">
+                    <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; display: block;">前年からの変更内容・履歴</label>
+                    <input type="text" v-model="form.changeDetails" class="input-organic" placeholder="例: 前年引継ぎ" />
+                  </div>
+                </div>
+
+                <div class="form-group mb-4" style="margin-bottom: 1rem;">
+                  <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; display: block;">メニュー訴求表示の設定</label>
+                  <div class="checkbox-box" style="display: flex; align-items: center; gap: 0.5rem; background: #f8fafc; padding: 0.75rem; border-radius: 6px;">
+                    <input type="checkbox" id="claim-checkbox-new" v-model="form.isOrganicClaim" />
+                    <label for="claim-checkbox-new" style="font-size: 0.85rem; color: #1e293b; cursor: pointer;">
+                      メニュー看板・ポップ上に「有機」「オーガニック」と表記して訴求する
+                    </label>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; display: block;">料理の説明（メニュー掲載文など）</label>
+                  <textarea v-model="form.description" rows="2" class="input-organic" placeholder="説明文を入力してください。"></textarea>
+                </div>
+
+                <!-- 料理写真の登録 (v1.4.0 追加) -->
+                <div class="form-group mt-4" style="margin-top: 1rem; border-top: 1px solid #e2e8f0; padding-top: 1rem;">
+                  <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.5rem; display: block; color: var(--primary);">📷 料理写真の登録 (JAS管理スペック表に印刷されます)</label>
+                  <div style="display: flex; gap: 1rem; align-items: center; background: #faf8f5; padding: 1rem; border-radius: 8px; border: 1px solid #ebdcd0;">
+                    <!-- アップロードボタン -->
+                    <div style="flex-grow: 1;">
+                      <input type="file" id="menu-image-upload" accept="image/*" class="hidden" @change="handleMenuImageUpload" style="display: none;" />
+                      <label for="menu-image-upload" class="btn btn-outline btn-sm flex items-center gap-1 cursor-pointer" style="margin: 0; display: inline-flex; background: white;">
+                        <Camera :size="16" /> 写真を選択・アップロード
+                      </label>
+                      <span class="text-xs text-sub block mt-1" style="font-size: 0.7rem; color: var(--text-light); display: block; margin-top: 0.25rem;">
+                        ※登録した画像はJAS料理スペック管理票の右下「写真」欄に自動で配置されます。JPEG、PNG対応。
+                      </span>
+                    </div>
+                    
+                    <!-- プレビュー -->
+                    <div v-if="form.imageUrl" style="position: relative; width: 80px; height: 80px; border-radius: 6px; border: 1px solid #cbd5e1; overflow: hidden; background: white; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-sm);">
+                      <img :src="form.imageUrl" alt="Image Preview" style="width: 100%; height: 100%; object-fit: cover;" />
+                      <button type="button" @click="form.imageUrl = ''" style="position: absolute; top: 2px; right: 2px; background: rgba(0,0,0,0.6); color: white; border: none; border-radius: 50%; width: 18px; height: 18px; font-size: 0.7rem; cursor: pointer; display: flex; align-items: center; justify-content: center;">×</button>
+                    </div>
+                    <div v-else style="width: 80px; height: 80px; border-radius: 6px; border: 2px dashed #cbd5e1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #f8fafc; color: #94a3b8; font-size: 0.65rem;">
+                      <span>未登録</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- セクション2: レシピ原材料配合 -->
+              <div v-if="activeFormTab === 'recipe'" class="form-section mb-6 animate-fade-in">
+                <div class="card-header flex items-center justify-between border-b pb-2 mb-4" style="display: flex; justify-content: space-between; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.5rem; margin-bottom: 1rem;">
+                  <h4 class="font-bold flex items-center gap-1 text-dark" style="margin: 0; font-weight: 700; color: #1e293b;"><Scale :size="18" /> レシピ原材料配合 (1食あたり)</h4>
+                  <button class="btn btn-primary btn-sm flex items-center gap-1" @click="addRecipeRow">
+                    <Plus :size="16" /> 原材料を追加
+                  </button>
+                </div>
+
+                <div class="designer-recipe-rows">
+                  <div v-if="form.recipe.length === 0" class="empty-recipe-designer text-center py-6" style="text-align: center; padding: 2rem 0; background: #f8fafc; border-radius: 8px;">
+                    <div class="text-gray-300 mb-2" style="color: #cbd5e1; display: flex; justify-content: center;"><Scale :size="32" /></div>
+                    <p class="text-sub font-semibold" style="color: #64748b; font-size: 0.85rem;">原材料が登録されていません。</p>
+                  </div>
+
+                  <div v-for="(item, index) in form.recipe" :key="index" class="designer-recipe-row card p-3 mb-3" style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.75rem; margin-bottom: 0.5rem; background: #f8fafc; display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center;">
+                    <div class="flex-1" style="flex: 2; min-width: 200px;">
+                      <label style="font-size: 0.7rem; font-weight: bold; color: #64748b; margin-bottom: 0.25rem; display: block;">第 {{ index + 1 }} 原材料</label>
+                      <select v-model="item.ingredientId" class="input-organic select-organic" style="width: 100%;">
+                        <option v-for="ing in state.ingredients" :key="ing.id" :value="ing.id">
+                          {{ ing.name }} ({{ ing.type === 'organic' ? '有機JAS適合' : (ing.type === 'salt_water' ? '水塩(除外対象)' : '一般材料') }})
+                        </option>
+                      </select>
+                    </div>
+                    
+                    <div style="flex: 1; min-width: 120px;">
+                      <label style="font-size: 0.7rem; font-weight: bold; color: #64748b; margin-bottom: 0.25rem; display: block;">重量</label>
+                      <div class="weight-input-container" style="display: flex; align-items: center; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; background: white;">
+                        <input type="number" v-model.number="item.amount" min="0" step="0.1" class="designer-weight-input" style="width: 100%; border: none; padding: 0.5rem; text-align: right;" />
+                        <span style="background: #f1f5f9; padding: 0.5rem; border-left: 1px solid #cbd5e1; font-weight: bold; font-size: 0.8rem;">g</span>
+                      </div>
+                    </div>
+
+                    <button class="btn-delete" @click="removeRecipeRow(index)" style="background: #fef2f2; border: 1px solid #fee2e2; color: #ef4444; padding: 0.5rem; border-radius: 6px; cursor: pointer; align-self: flex-end; margin-bottom: 2px;">
+                      <Trash2 :size="16" />
+                    </button>
+
+                    <div class="w-full text-xs text-amber-600 mt-1 flex items-center gap-1" v-if="getIngredientType(item.ingredientId) === 'salt_water'" style="width: 100%; color: #d97706; font-size: 0.75rem;">
+                      <Info :size="12" /> 水・食塩は、有機割合計算から自動除外されます。
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- セクション3: JAS 0004 監査項目 -->
+              <div v-if="activeFormTab === 'jas'" class="form-section animate-fade-in" style="margin-bottom: 1rem;">
+                <h4 class="font-bold flex items-center gap-1 text-dark border-b pb-2 mb-4" style="font-weight: 700; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.5rem; margin-bottom: 1rem;"><Award :size="18" /> JAS 0004 監査項目</h4>
+                
+                <div class="grid-2-col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                  <div class="form-group">
+                    <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; display: block;">登録年度 <span class="text-red-500 font-bold">*</span></label>
+                    <select v-model="form.year" class="input-organic select-organic">
+                      <option value="2026">2026年度</option>
+                      <option value="2025">2025年度</option>
+                      <option value="2024">2024年度</option>
+                      <option value="2023">2023年度</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; display: block;">目標作成日</label>
+                    <input type="date" v-model="form.targetCreatedDate" class="input-organic" />
+                  </div>
+                </div>
+
+                <div class="grid-2-col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                  <div class="form-group">
+                    <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; display: block;">開始予定日</label>
+                    <input type="date" v-model="form.startDate" class="input-organic" />
+                  </div>
+                </div>
+
+                <div class="grid-2-col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                  <div class="form-group">
+                    <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; display: block;">内容見直し日</label>
+                    <input type="date" v-model="form.reviewDate" class="input-organic" />
+                  </div>
+                  <div class="form-group">
+                    <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; display: block;">達成期限</label>
+                    <input type="date" v-model="form.deadline" class="input-organic" />
+                  </div>
+                </div>
+
+                <div class="grid-2-col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                  <div class="form-group">
+                    <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; display: block;">作成者・格付担当者</label>
+                    <input type="text" v-model="form.creatorApproved" class="input-organic" />
+                  </div>
+                  <div class="form-group">
+                    <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; display: block;">調理責任者承認</label>
+                    <input type="text" v-model="form.managerApproved" class="input-organic" />
+                  </div>
+                </div>
+
+                <div class="form-group mb-4" style="margin-bottom: 1rem;">
+                  <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; display: block;">具体的な調理方法（混同・汚染防止を含む詳細手順）</label>
+                  <textarea v-model="form.cookingInstructions" rows="3" class="input-organic" @keydown.enter="handleCookingInstructionsKeydown" placeholder="改行すると自動で番号が振られます。"></textarea>
+                </div>
+
+                <div class="form-group">
+                  <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; display: block;">備考欄（JAS監査上重要な管理事項）</label>
+                  <textarea v-model="form.remarks" rows="2" class="input-organic" placeholder="備考を入力してください。"></textarea>
+                </div>
+              </div>
+            </div>
+
+            <!-- 右側: リアルタイム割合判定シミュレーター (固定表示) (v1.9.3 臙脂＆和風プレミアム化) -->
+            <div class="designer-right-card" style="background: linear-gradient(135deg, #fdfbf7 0%, #faf5ea 100%); border: 1.5px solid #dcd1be; border-radius: 8px; padding: 1.5rem; display: flex; flex-direction: column; height: fit-content; position: sticky; top: 0; box-shadow: var(--shadow-sm);">
+              <h4 class="font-bold border-b pb-3 mb-4 flex items-center gap-1" style="color: #801c15; font-weight: 700; margin-bottom: 1rem; border-bottom: 1px solid #dcd1be; padding-bottom: 0.5rem;"><Sparkles :size="18" /> 有機JAS適合リアルタイム検証</h4>
+              
+              <div class="sim-metric-group card p-4 bg-white mb-4" style="background: white; border: 1.5px solid #e7dfd5; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; box-shadow: var(--shadow-xs);">
+                <div class="flex justify-between items-center mb-2 border-b pb-2" style="display: flex; justify-content: space-between; border-bottom: 1px solid #fcfaf7; padding-bottom: 0.5rem; margin-bottom: 0.5rem;">
+                  <span class="text-sub font-semibold" style="color: #6e5c53; font-size: 0.8rem;">有機原材料総重量</span>
+                  <span class="font-bold text-dark" style="font-size: 1.1rem; color: #801c15; font-family: monospace;">{{ simulationResult.organicWeight }} g</span>
+                </div>
+                <div class="flex justify-between items-center" style="display: flex; justify-content: space-between;">
+                  <span class="text-sub font-semibold" style="color: #6e5c53; font-size: 0.8rem;">計算対象総重量 (水・塩除く)</span>
+                  <span class="font-bold text-dark" style="font-size: 1.1rem; color: #5c3d2e; font-family: monospace;">{{ simulationResult.totalWeight }} g</span>
+                </div>
+              </div>
+
+              <!-- 判定結果サマリーメーター -->
+              <div :class="['designer-gauge card p-6 text-center mb-4', simulationResult.isValidOrganicMenu ? 'gauge-success' : 'gauge-danger']" :style="{ background: simulationResult.isValidOrganicMenu ? '#f0fdf4' : '#fef2f2', borderColor: simulationResult.isValidOrganicMenu ? '#bbf7d0' : '#fee2e2', color: simulationResult.isValidOrganicMenu ? '#15803d' : '#ef4444' }" style="border-radius: 10px; border: 1.5px solid; padding: 1.5rem; text-align: center; margin-bottom: 1rem; box-shadow: var(--shadow-xs);">
+                <div class="gauge-ratio mb-1">
+                  <span class="gauge-value" style="font-size: 3rem; font-weight: 800; font-family: monospace; line-height: 1;">{{ simulationResult.ratio }}</span> <span class="gauge-percent" style="font-size: 1.5rem; font-weight: bold;">%</span>
+                </div>
+                <div class="gauge-status font-bold flex items-center justify-center gap-2" style="font-size: 1rem; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 0.25rem;">
+                  <Check v-if="simulationResult.isValidOrganicMenu" :size="20" />
+                  <AlertTriangle v-else :size="20" />
+                  {{ simulationResult.isValidOrganicMenu ? 'JAS 80% 適合基準をクリア' : '有機JAS不適合（80%未満）' }}
+                </div>
+              </div>
+
+              <!-- プログレスゲージバー -->
+              <div class="designer-progress-box mb-6" style="margin-bottom: 1.5rem;">
+                <div class="designer-progress-track" style="height: 12px; background: #e2e8f0; border-radius: 9999px; position: relative; overflow: hidden;">
+                  <div 
+                    :class="['designer-progress-fill', simulationResult.isValidOrganicMenu ? 'valid' : 'invalid']"
+                    :style="{ width: `${Math.min(simulationResult.ratio, 100)}%`, background: simulationResult.isValidOrganicMenu ? '#10b981' : '#ef4444' }"
+                    style="height: 100%; border-radius: 9999px; transition: width 0.3s ease;"
+                  ></div>
+                  <div class="designer-target-line" style="position: absolute; top: 0; bottom: 0; width: 3px; background: #801c15; left: 80%;"></div>
+                </div>
+                <div class="flex justify-between text-xs text-sub font-semibold mt-1" style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #8c786c; margin-top: 0.25rem; position: relative;">
+                  <span>0%</span>
+                  <span style="color: #801c15; font-weight: bold; position: absolute; left: 80%; transform: translateX(-50%);">基準(80%)</span>
+                  <span>100%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer flex items-center justify-end gap-3 p-4 border-t no-print" style="background-color: #faf8f5; display: flex; justify-content: flex-end; gap: 0.75rem; padding: 1rem; border-top: 1.5px solid #dcd1be;">
+          <button class="btn btn-outline" @click="showRecipeModal = false" style="background: white; border-color: #cbd5e1; color: #475569;">キャンセル</button>
+          <button class="btn btn-primary px-6 py-2.5 font-bold flex items-center gap-1" @click="saveMenu" style="background-color: #801c15; border-color: #6e1610; color: white;">
+            <Check :size="18" /> {{ isEditing ? 'スペック・配合を保存' : '新規スペックを登録' }}
+          </button>
+        </div>
+      </div>
+    </div>
+    </Teleport>
+
+    <!-- 料理スペック帳票プレビューモーダル (JAS 0004 監査様式準拠) (v1.2.0 Teleport対応) (v1.4.0 実物再現完全リニューアル) -->
+    <Teleport to="body">
+      <div v-if="showSpecSheet && selectedMenuForSpec" class="modal-backdrop">
+      <div class="modal modal-spec animate-fade-in" style="max-width: 900px; width: 95vw; max-height: 95vh; display: flex; flex-direction: column;">
+        <div class="modal-header no-print" style="background: linear-gradient(to right, #faf8f5, #f5f0e8); color: #5c3d2e; border-bottom: 1.5px solid #dcd1be; padding: 1rem 1.5rem; display: flex; align-items: center; justify-content: space-between;">
+          <h3 class="flex items-center gap-2" style="color: #801c15 !important; margin: 0; font-size: 1.15rem; font-weight: bold; display: flex; align-items: center;">
+            <FileText :size="20" style="color: #801c15;" /> 
+            <span>JAS 0004 料理スペック管理票 (監査提示用)</span>
+          </h3>
+          <div class="flex items-center gap-3">
+            <button class="btn btn-outline btn-xs flex items-center gap-1" style="color: #801c15 !important; border-color: #dcd1be !important; background: white !important; font-weight: 600; padding: 0.35rem 0.75rem; border-radius: 4px;" @click="handlePrint">
+              <Printer :size="14" style="color: #801c15;" /> 印刷・PDF出力
+            </button>
+            <button class="btn-close" style="color: #68645f !important; display: flex; align-items: center; justify-content: center;" @click="showSpecSheet = false"><X :size="20" /></button>
+          </div>
+        </div>
+        <div class="modal-body print-area" style="flex-grow: 1; overflow-y: auto; padding: 1.5rem; background: #faf9f6;">
+          
+          <!-- A4サイズに収まるエクセル実物再現・申請用紙デザイン -->
+          <div class="excel-spec-sheet-v2" v-if="selectedMenuSpecData">
+            
+            <!-- A. 最上部ヘッダー部: タイトル、承認印、日付メタデータの3ブロック並列 -->
+            <div class="sheet-header-blocks" style="display: grid; grid-template-columns: 3.5fr 3.5fr 3fr; gap: 1rem; align-items: start; border-bottom: 2px solid #000; padding-bottom: 0.75rem;">
+              <!-- 左: タイトル -->
+              <div class="header-title-block" style="padding-top: 1rem;">
+                <h1 class="main-title" style="margin: 0; font-size: 2.2rem; font-weight: 800; color: #000; font-family: 'Hiragino Mincho ProN', 'Yu Mincho', serif; letter-spacing: 0.1em; text-align: center;">有機料理スペック</h1>
+              </div>
+              
+              <!-- 中: 2連和風承認印枠 -->
+              <div class="header-approval-block">
+                <table class="approval-stamps-table" style="width: 100%; border-collapse: collapse; border: 1.5px solid #000; text-align: center;">
+                  <tr>
+                    <th style="font-size: 0.7rem; font-weight: bold; border: 1px solid #000; padding: 0.2rem; background: #f8fafc; color: #000; width: 50%;">調理責任者承認</th>
+                    <th style="font-size: 0.7rem; font-weight: bold; border: 1px solid #000; padding: 0.2rem; background: #f8fafc; color: #000; width: 50%;">作成者承認</th>
+                  </tr>
+                  <tr>
+                    <td style="border: 1px solid #000; padding: 0.5rem; height: 75px; vertical-align: middle;">
+                      <!-- 印影スタンプ風の丸型赤いハンコ -->
+                      <div class="stamp-circle" style="width: 58px; height: 58px; border: 2px solid #dc2626; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 0 auto; color: #dc2626; font-family: 'Hiragino Mincho ProN', serif; line-height: 1.1; font-weight: bold; transform: rotate(-3deg);">
+                        <span class="stamp-dept" style="font-size: 0.55rem; border-bottom: 1px solid #dc2626; width: 80%; text-align: center; padding-bottom: 1px; letter-spacing: 0.1em;">厨房</span>
+                        <span class="stamp-date" style="font-size: 0.5rem; font-family: monospace; scale: 0.9;">{{ selectedMenuForSpec.reviewDate ? selectedMenuForSpec.reviewDate.substring(2).replace(/-/g, '/') : '06/8/25' }}</span>
+                        <span class="stamp-name-jp" style="font-size: 0.65rem; border-top: 1px solid #dc2626; width: 80%; text-align: center; padding-top: 1px; letter-spacing: 0.05em;">{{ selectedMenuForSpec.managerApproved ? selectedMenuForSpec.managerApproved.substring(0,2) : '中村' }}</span>
+                      </div>
+                    </td>
+                    <td style="border: 1px solid #000; padding: 0.5rem; height: 75px; vertical-align: middle;">
+                      <div class="stamp-circle" style="width: 58px; height: 58px; border: 2px solid #dc2626; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 0 auto; color: #dc2626; font-family: 'Hiragino Mincho ProN', serif; line-height: 1.1; font-weight: bold; transform: rotate(2deg);">
+                        <span class="stamp-dept" style="font-size: 0.55rem; border-bottom: 1px solid #dc2626; width: 80%; text-align: center; padding-bottom: 1px; letter-spacing: 0.1em;">厨房</span>
+                        <span class="stamp-date" style="font-size: 0.5rem; font-family: monospace; scale: 0.9;">{{ selectedMenuForSpec.targetCreatedDate ? selectedMenuForSpec.targetCreatedDate.substring(2).replace(/-/g, '/') : '06/8/25' }}</span>
+                        <span class="stamp-name-jp" style="font-size: 0.65rem; border-top: 1px solid #dc2626; width: 80%; text-align: center; padding-top: 1px; letter-spacing: 0.05em;">{{ selectedMenuForSpec.creatorApproved ? selectedMenuForSpec.creatorApproved.substring(0,2) : '田中' }}</span>
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+              </div>
+              
+              <!-- 右: メタデータテーブル -->
+              <div class="header-meta-block">
+                <table class="meta-dates-table" style="width: 100%; border-collapse: collapse; border: 1.5px solid #000; font-size: 0.75rem; text-align: left;">
+                  <tr>
+                    <th style="font-weight: bold; border: 1px solid #000; padding: 0.25rem 0.5rem; background: #f8fafc; color: #000; width: 40%;">目標作成日</th>
+                    <td style="border: 1px solid #000; padding: 0.25rem 0.5rem; color: #000; font-family: monospace;">{{ selectedMenuSpecData.targetCreatedDateWareki }}</td>
+                  </tr>
+                  <tr>
+                    <th style="font-weight: bold; border: 1px solid #000; padding: 0.25rem 0.5rem; background: #f8fafc; color: #000;">開始予定日</th>
+                    <td style="border: 1px solid #000; padding: 0.25rem 0.5rem; color: #000; font-family: monospace;">{{ selectedMenuSpecData.startDateWareki }}</td>
+                  </tr>
+                  <tr>
+                    <th style="font-weight: bold; border: 1px solid #000; padding: 0.25rem 0.5rem; background: #f8fafc; color: #000;">内容見直し日</th>
+                    <td style="border: 1px solid #000; padding: 0.25rem 0.5rem; color: #000; font-family: monospace;">{{ selectedMenuSpecData.reviewDateWareki }}</td>
+                  </tr>
+                  <tr>
+                    <th style="font-weight: bold; border: 1px solid #000; padding: 0.25rem 0.5rem; background: #f8fafc; color: #000;">変更内容</th>
+                    <td style="border: 1px solid #000; padding: 0.25rem 0.5rem; color: #000; font-weight: 500;">{{ selectedMenuForSpec.changeDetails || '特になし' }}</td>
+                  </tr>
+                </table>
+              </div>
+            </div>
+
+            <!-- B. 基本情報ブロック (No, カテゴリ, 料理名 / 達成期限, 目標) -->
+            <div class="basic-info-blocks mt-3" style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 1rem;">
+              <div class="basic-left-table">
+                <table class="nested-info-table" style="width: 100%; border-collapse: collapse; border: 1.5px solid #000; font-size: 0.75rem; height: 100%;">
+                  <tr>
+                    <th style="font-weight: bold; border: 1px solid #000; padding: 0.35rem 0.5rem; background: #f8fafc; color: #000; text-align: center; width: 20%;">No.</th>
+                    <td style="border: 1px solid #000; padding: 0.35rem 0.5rem; color: #000; font-family: monospace;">{{ selectedMenuForSpec.id }}</td>
+                  </tr>
+                  <tr>
+                    <th style="font-weight: bold; border: 1px solid #000; padding: 0.35rem 0.5rem; background: #f8fafc; color: #000; text-align: center;">カテゴリ</th>
+                    <td style="border: 1px solid #000; padding: 0.35rem 0.5rem; color: #000;">{{ selectedMenuForSpec.category || '料理' }}</td>
+                  </tr>
+                  <tr>
+                    <th style="font-weight: bold; border: 1px solid #000; padding: 0.35rem 0.5rem; background: #f8fafc; color: #000; text-align: center;">料理名</th>
+                    <td style="border: 1px solid #000; padding: 0.35rem 0.5rem; color: #000; font-weight: bold; font-size: 1rem;">{{ selectedMenuForSpec.name }}</td>
+                  </tr>
+                </table>
+              </div>
+              <div class="basic-right-table">
+                <table class="nested-info-table" style="width: 100%; border-collapse: collapse; border: 1.5px solid #000; font-size: 0.75rem; height: 100%;">
+                  <tr>
+                    <th style="font-weight: bold; border: 1px solid #000; padding: 0.35rem 0.5rem; background: #f8fafc; color: #000; text-align: center; width: 35%;">達成期限</th>
+                    <td style="border: 1px solid #000; padding: 0.35rem 0.5rem; color: #000;">{{ selectedMenuForSpec.deadline ? selectedMenuForSpec.deadline + ' (一年間)' : '一年間' }}</td>
+                  </tr>
+                  <tr>
+                    <th style="font-weight: bold; border: 1px solid #000; padding: 0.35rem 0.5rem; background: #f8fafc; color: #000; text-align: center;">目標(目安)</th>
+                    <td style="border: 1px solid #000; padding: 0.35rem 0.5rem; color: #000; font-weight: bold;">{{ selectedMenuForSpec.courseTargetNum || '年間3600食' }}</td>
+                  </tr>
+                </table>
+              </div>
+            </div>
+
+            <!-- 適合�                    <div v-else class="empty-photo-placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; color: #94a3b8; text-align: center; padding: 1rem;">
+                      <Camera :size="28" class="text-gray-300" style="color: #cbd5e1; margin-bottom: 0.25rem;" />
+                      <span style="font-size: 0.7rem; color: #94a3b8; font-weight: bold;">[画像未登録]</span>
+                      <span style="font-size: 0.6rem; color: #cbd5e1; margin-top: 0.1rem;">メニュー「編集」ボタンから写真をアップロードできます</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 適合表示マークの凡例テーブル (帳票仕様) -->
+                <div class="legend-mini-table-box mt-2">
+                  <table class="legend-mini-table" style="width: 100%; border-collapse: collapse; border: 1.5px solid #000; font-size: 0.65rem; background: white;">
+                    <thead>
+                      <tr style="background: #f8fafc; text-align: center; font-weight: bold; color: #000; border-bottom: 1.5px solid #000;">
+                        <th colspan="3" style="padding: 0.25rem; font-size: 0.7rem;">有機食材の割合表示マーク</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr style="height: 18px;">
+                        <td style="border: 1px solid #000; padding: 0.2rem 0.4rem; font-weight: bold; width: 40%;">95%以上</td>
+                        <td style="border: 1px solid #000; padding: 0.2rem; text-align: center; width: 25%; vertical-align: middle;">
+                          <div style="display: flex; gap: 2px; justify-content: center; align-items: center;">
+                            <img v-for="n in 4" :key="n" src="/tsubo.png" style="width: 14px; height: 17px; object-fit: contain;" />
+                          </div>
+                        </td>
+                        <td style="border: 1px solid #000; padding: 0.25rem 0.4rem; width: 35%; font-size: 0.58rem; line-height: 1.25; color: #8c786c; vertical-align: middle;" rowspan="4">
+                          左記の表示でお料理の有機食材割合をご案内しております。
+                        </td>
+                      </tr>
+                      <tr style="height: 18px;">
+                        <td style="border: 1px solid #000; padding: 0.2rem 0.4rem; font-weight: bold;">80%以上95%未満</td>
+                        <td style="border: 1px solid #000; padding: 0.2rem; text-align: center; vertical-align: middle;">
+                          <div style="display: flex; gap: 2px; justify-content: center; align-items: center;">
+                            <img v-for="n in 3" :key="n" src="/tsubo.png" style="width: 14px; height: 17px; object-fit: contain;" />
+                          </div>
+                        </td>
+                      </tr>
+                      <tr style="height: 18px;">
+                        <td style="border: 1px solid #000; padding: 0.2rem 0.4rem; font-weight: bold;">50%以上80%未満</td>
+                        <td style="border: 1px solid #000; padding: 0.2rem; text-align: center; vertical-align: middle;">
+                          <div style="display: flex; gap: 2px; justify-content: center; align-items: center;">
+                            <img v-for="n in 2" :key="n" src="/tsubo.png" style="width: 14px; height: 17px; object-fit: contain;" />
+                          </div>
+                        </td>
+                      </tr>
+                      <tr style="height: 18px;">ng: 0.2rem; text-align: center; color: #64748b;">{{ item.unit }}</td>
+                    </tr>
+                    <!-- 計 (合計行) -->
+                    <tr class="summary-total-row bg-light" style="height: 24px; font-weight: bold; background-color: #f1f5f9;">
+                      <td style="border: 1px solid #000; padding: 0.2rem; text-align: center;">計</td>
+                      <td style="border: 1px solid #000; padding: 0.2rem 0.5rem; text-align: left; font-weight: bold; color: #166534; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;" colspan="2">{{ selectedMenuForSpec.name }}</td>
+                      <td style="border: 1px solid #000; padding: 0.2rem 0.5rem; text-align: right; font-family: monospace; font-weight: bold; color: #166534;">{{ selectedMenuSpecData.totalWeight }}</td>
+                      <td style="border: 1px solid #000; padding: 0.2rem; text-align: center; color: #166534; font-weight: bold;">g</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- D. 有機/非有機 対比集計テーブル -->
+            <div class="summary-aggregate-row mt-3" style="display: flex; justify-content: flex-end; width: 100%;">
+              <table class="aggregate-table" style="width: 50%; border-collapse: collapse; border: 1.5px solid #000; font-size: 0.75rem; text-align: center; margin-left: auto;">
+                <tr>
+                  <th style="border: 1px solid #000; padding: 0.25rem; background-color: #f0fdf4; color: #166534; font-weight: bold; width: 50%;">有機</th>
+                  <th style="border: 1px solid #000; padding: 0.25rem; background-color: #f8fafc; color: #475569; font-weight: bold; width: 50%;">非有機</th>
+                </tr>
+                <tr>
+                  <td style="border: 1px solid #000; padding: 0.35rem 0.5rem; text-align: right; font-family: monospace; font-weight: bold; color: #000;">
+                    <div style="display: flex; justify-content: space-between; width: 100%;">
+                      <span>合計</span>
+                      <span>{{ selectedMenuSpecData.organicWeight }} g</span>
+                    </div>
+                  </td>
+                  <td style="border: 1px solid #000; padding: 0.35rem 0.5rem; text-align: right; font-family: monospace; font-weight: bold; color: #000;">
+                    <div style="display: flex; justify-content: space-between; width: 100%;">
+                      <span>合計</span>
+                      <span>{{ selectedMenuSpecData.generalWeight }} g</span>
+                    </div>
+                  </td>
+                </tr>
+                <tr style="font-weight: bold; background-color: #f8fafc;">
+                  <td style="border: 1px solid #000; padding: 0.35rem 0.5rem; text-align: right; color: #166534; font-size: 0.85rem;">
+                    <div style="display: flex; justify-content: space-between; width: 100%;">
+                      <span>割合</span>
+                      <span>{{ selectedMenuSpecData.organicRatio }} %</span>
+                    </div>
+                  </td>
+                  <td style="border: 1px solid #000; padding: 0.35rem 0.5rem; text-align: right; color: #475569; font-size: 0.85rem;">
+                    <div style="display: flex; justify-content: space-between; width: 100%;">
+                      <span>割合</span>
+                      <span>{{ selectedMenuSpecData.generalRatio }} %</span>
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </div>
+
+            <!-- E. 下部コンテンツ: 作り方 (左下) & 写真・記号凡例 (右下) -->
+            <div class="bottom-blocks-container mt-3" style="display: grid; grid-template-columns: 1.3fr 1fr; gap: 1rem; align-items: start;">
+              <!-- 左: 作り方テーブル (最大7行) -->
+              <div class="bottom-left-instructions">
+                <table class="instructions-rows-table" style="width: 100%; border-collapse: collapse; border: 1.5px solid #000; font-size: 0.75rem;">
+                  <thead>
+                    <tr style="background: #f8fafc; color: #000; font-weight: bold; text-align: center;">
+                      <th style="border: 1px solid #000; padding: 0.35rem 0.2rem; width: 10%;">No</th>
+                      <th style="border: 1px solid #000; padding: 0.35rem 0.2rem; width: 90%; text-align: left; padding-left: 0.75rem;">作り方</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in selectedMenuSpecData.instructionRows" :key="row.no" style="height: 38px;">
+                      <td style="border: 1px solid #000; padding: 0.2rem; text-align: center; font-family: monospace;">{{ row.no }}</td>
+                      <td style="border: 1px solid #000; padding: 0.35rem 0.75rem; text-align: left; font-size: 0.75rem; line-height: 1.35; font-weight: 500; white-space: pre-wrap; vertical-align: top;">{{ row.text }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- 右: 写真 ＆ 適合表示マーク凡例 -->
+              <div class="bottom-right-photo-legend" style="display: flex; flex-direction: column;">
+                <!-- 写真枠 -->
+                <div class="photo-box" style="border: 1.5px solid #000; border-radius: 4px; overflow: hidden; background: white;">
+                  <div class="photo-title" style="background: #f8fafc; border-bottom: 1px solid #000; padding: 0.35rem; text-align: center; font-size: 0.75rem; font-weight: bold; color: #000;">写真</div>
+                  <div class="photo-body" style="height: 165px; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative;">
+                    <!-- 登録画像がある場合は描画 -->
+                    <img v-if="selectedMenuForSpec.imageUrl" :src="selectedMenuForSpec.imageUrl" alt="Menu Food Image" class="registered-food-image" style="width: 100%; height: 100%; object-fit: contain;" />
+                    <!-- 無い場合はプレースホルダー -->
+                    <div v-else class="empty-photo-placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; color: #94a3b8; text-align: center; padding: 1rem;">
+                      <Camera :size="28" class="text-gray-300" style/* ----------------------------------------------------------------------------
+ * 印刷用メディアクエリ (PDF出力時に完全に帳票のみにする)
+ * ---------------------------------------------------------------------------- */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  
+  .print-area, .print-area * {
+    visibility: visible;
+  }
+  
+  .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+  }
+  
+  .no-print {
+    display: none !important;
+  }
+  
+  .excel-spec-sheet-v2 {
+    border: 2px solid #000000 !important;
+    box-shadow: none !important;
+    padding: 4mm !important; /* A4に完全に収まるようパディングを4mmに微縮小 */
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+    page-break-inside: avoid;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    font-size: 8pt !important; /* 全体の基準文字サイズを8ptにして収まりを保証 */
+  }
+  
+  .excel-spec-sheet-v2 th {
+    background-color: #fffcf0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+ 
+  .excel-spec-sheet-v2 td {
+    background-color: #ffffff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .main-title {
+    font-size: 1.6rem !important; /* タイトルの巨大化を防ぎA4上部の余白を確保 (1.7rem -> 1.6rem) */
+    letter-spacing: 0.05em !important;
+  }
+  
+  .summary-total-row {
+    background-color: #f1f5f9 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  .approval-stamps-table td {
+    height: 46px !important; /* 承認印エリアの高さをさらにタイトに (48px -> 46px) */
+    padding: 0.05rem !important;
+  }
+
+  .stamp-circle {
+    width: 36px !important; /* 承認スタンプの直径を縮小してはみ出し防止 (38px -> 36px) */
+    height: 36px !important;
+    background-color: transparent !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .stamp-circle span.stamp-dept {
+    font-size: 0.38rem !important;
+    padding-bottom: 0px !important;
+  }
+  
+  .stamp-circle span.stamp-date {
+    font-size: 0.32rem !important;
+    scale: 0.72 !important;
+  }
+  
+  .stamp-circle span.stamp-name-jp {
+    font-size: 0.45rem !important;
+    padding-top: 0px !important;
+  }
+  
+  .sheet-header-blocks {
+    gap: 0.3rem !important; /* 要素間ギャップを削減 */
+    padding-bottom: 0.2rem !important;
+  }
+  
+  .basic-info-blocks {
+    margin-top: 0.12rem !important; /* マージンを削減 */
+    gap: 0.3rem !important;
+  }
+
+  .basic-info-blocks th,
+  .basic-info-blocks td {
+    padding: 0.15rem 0.25rem !important; /* セル内余白を詰めて行高を低減 */
+    font-size: 0.65rem !important;
+  }
+
+  .basic-info-blocks td[style*="font-size: 1rem"] {
+    font-size: 0.78rem !important; /* 料理名の文字サイズを縮小 */
+  }
+ 
+  .tsubo-row {
+    margin-top: 0.08rem !important;
+  }
+ 
+  .twin-recipe-tables-container {
+    margin-top: 0.08rem !important;
+    gap: 0.3rem !important;
+  }
+ 
+  .twin-recipe-tables-container td, 
+  .twin-recipe-tables-container th {
+    padding: 0.04rem 0.15rem !important; /* セル内余白をさらにタイトに */
+    height: 15px !important; /* セル高さを15pxに微縮小 (16px -> 15px) */
+    font-size: 0.62rem !important;
+  }
+
+  .twin-recipe-tables-container tr,
+  .twin-recipe-tables-container tbody tr {
+    height: 15px !important; /* trのインライン高さ指定を上書き */
+  }
+ 
+  .summary-aggregate-row {
+    margin-top: 0.12rem !important;
+  }
+
+  .summary-aggregate-row table td {
+    padding: 0.15rem 0.3rem !important;
+    font-size: 0.65rem !important;
+  }
+ 
+  .bottom-blocks-container {
+    margin-top: 0.12rem !important;
+    gap: 0.3rem !important;
+  }
+ 
+  .instructions-rows-table td, 
+  .instructions-rows-table th {
+    padding: 0.08rem 0.25rem !important; /* 作り方セルの余白をタイトに */
+    height: 22px !important; /* 高さを 24px -> 22px に縮小 */
+    font-size: 0.65rem !important;
+  }
+
+  .instructions-rows-table tr,
+  .instructions-rows-table tbody tr {
+    height: 22px !important; /* trのインライン高さ 38px を完全に上書き */
+  }
+ 
+  .photo-body {
+    height: 95px !important; /* 写真枠の高さを100px -> 95pxにコンパクト化して見切れを確実に防止 */
+  }
+
+  .photo-title {
+    padding: 0.15rem !important;
+    font-size: 0.65rem !important;
+  }
+
+  .legend-mini-table tr {
+    height: 12px !important; /* ミニ凡例のセルの高さをさらに詰める (13px -> 12px) */
+  }
+
+  .legend-mini-table td,
+  .legend-mini-table th {
+    padding: 0.08rem 0.15rem !important;
+    font-size: 0.55rem !important;
+  }
+ 
+  .footer-compliance-box {
+    margin-top: 0.12rem !important;
+  }
+ 
+  .compliance-table tr {
+    height: 18px !important; /* 適合表示テーブルのtr高さを18pxに固定して余白削減 */
+  }
+ 
+  .compliance-table th, .compliance-table td {
+    padding: 0.04rem 0.15rem !important; 
+    font-size: 0.62rem !important; /* 適合表示のフォントサイズを削減 */
+  }
+}le="height: 18px;">
+                        <td style="border: 1px solid #000; padding: 0.2rem 0.4rem; font-weight: bold;">50%未満</td>
+                        <td style="border: 1px solid #000; padding: 0.2rem; text-align: center; vertical-align: middle;">
+                          <div style="display: flex; gap: 2px; justify-content: center; align-items: center;">
+                            <img v-for="n in 1" :key="n" src="/tsubo.png" style="width: 14px; height: 17px; object-fit: contain;" />
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- F. 最下部: 適合の表示テーブル -->
+            <div class="footer-compliance-box mt-3">
+              <table class="compliance-table" style="width: 100%; border-collapse: collapse; border: 1.5px solid #000; font-size: 0.75rem; text-align: left;">
+                <tr style="height: 32px;">
+                  <th rowspan="3" style="font-weight: bold; border: 1px solid #000; padding: 0.35rem; background: #f8fafc; color: #000; text-align: center; width: 12%; border-right: 1.5px solid #000; font-size: 0.8rem;">適合の表示</th>
+                  <th style="font-weight: bold; border: 1px solid #000; padding: 0.35rem 0.5rem; background: #f8fafc; color: #000; width: 25%;">有機料理の表示様式</th>
+                  <td style="border: 1px solid #000; padding: 0.35rem 0.5rem; color: #000; vertical-align: middle;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                      <span>A.1 有機料理を提供する飲食店等の管理方法確認</span>
+                      <div style="display: inline-flex; align-items: center; gap: 1rem; font-weight: bold; margin-right: 2rem;">
+                        <!-- Yes に手書き風丸囲み -->
+                        <span style="position: relative; padding: 0 0.4rem; display: inline-flex; align-items: center;">
+                          Yes
+                          <svg v-if="selectedMenuForSpec.isValidOrganic" style="position: absolute; left: -6px; top: -5px; width: 38px; height: 26px; fill: none; stroke: #dc2626; stroke-width: 2.5;" viewBox="0 0 38 26">
+                            <ellipse cx="19" cy="13" rx="16" ry="11" transform="rotate(-3, 19, 13)" />
+                          </svg>
+                        </span>
+                        <span style="color: #cbd5e1;">No</span>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                <tr style="height: 28px;">
+                  <th style="font-weight: bold; border: 1px solid #000; padding: 0.35rem 0.5rem; background: #f8fafc; color: #000;">記号による表示</th>
+                  <td style="border: 1px solid #000; padding: 0.35rem 0.5rem; color: #000;">{{ selectedMenuForSpec.displayStyle || '記号により表示' }}</td>
+                </tr>
+                <tr style="height: 28px;">
+                  <th style="font-weight: bold; border: 1px solid #000; padding: 0.35rem 0.5rem; background: #f8fafc; color: #000;">適合の表示内容</th>
+                  <td style="border: 1px solid #000; padding: 0.35rem 0.5rem; color: #000;">
+                    表示期間（ <strong>{{ selectedMenuForSpec.displayPeriod || '通年' }}</strong> ）・方法（ <strong>{{ selectedMenuForSpec.displayMethod || 'メニューに掲載' }}</strong> ）
+                  </td>
+                </tr>
+              </table>
+            </div>
+
+          </div>
+        </div>
+        <div class="modal-footer no-print" style="background-color: #f9fafb; display: flex; justify-content: flex-end; gap: 0.75rem; padding: 1rem 1.5rem; border-top: 1px solid #cbd5e1;">
+          <button class="btn btn-outline" @click="showSpecSheet = false">閉じる</button>
+          <button class="btn btn-primary flex items-center gap-1" @click="handlePrint" style="background-color: #166534; border-color: #15803d; color: white; font-weight: bold; padding: 0.5rem 1.5rem;">
+            <Printer :size="16" /> この帳票を印刷 (PDF出力)
+          </button>
+        </div>
+      </div>
+    </div>
+    </Teleport>
+  </div>
+</template>
+
+<style scoped>
+/* ============================================================================
+   共通モーダル基本スタイル (画面全体へのオーバーレイと中央配置) (v1.2.0)
+   ============================================================================ */
+.modal-backdrop {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  background-color: rgba(15, 23, 42, 0.6) !important; /* ガラスモーフィズム用の深みのあるダークオーバーレイ */
+  backdrop-filter: blur(5px) !important; /* 背景を美しくぼかす */
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  z-index: 1000 !important; /* ヘッダーやサイドバーの上に確実に浮かび上がらせる */
+  animation: fadeIn 0.25s ease-out !important;
+}
+
+.modal {
+  background: white !important;
+  border-radius: 12px !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.08) !important;
+  width: 90vw !important;
+  max-width: 800px !important; /* 通常モーダルの上限幅 */
+  max-height: 85vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+
+
+.btn-close {
+  background: transparent !important;
+  border: none !important;
+  color: #64748b !important;
+  cursor: pointer !important;
+  padding: 0.25rem !important;
+  border-radius: 6px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: all 0.2s !important;
+}
+
+.btn-close:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+.modal-body {
+  padding: 1.5rem !important;
+  overflow-y: auto !important;
+  flex: 1 !important;
+}
+
+.modal-footer {
+  padding: 1rem 1.5rem !important;
+  border-top: 1px solid #f1f5f9 !important;
+  background: #f8fafc !important;
+  display: flex !important;
+  justify-content: flex-end !important;
+  gap: 0.75rem !important;
+}
+
+/* タブボタンのスタイリング */
+.form-tabs {
+  display: flex !important;
+  gap: 0.5rem !important;
+  border-bottom: 2px solid #e2e8f0 !important;
+  padding: 0 1.5rem !important;
+  background: #f8fafc !important;
+}
+
+.tab-btn {
+  padding: 0.85rem 1rem !important;
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
+  margin-bottom: -2px !important;
+  font-weight: 600 !important;
+  color: #64748b !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+}
+
+.tab-btn:hover {
+  color: #0f766e !important;
+}
+
+.tab-btn.active {
+  color: #0f766e !important;
+  border-bottom-color: #0f766e !important;
+}
+
+/* アニメーション定義 */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* ============================================================================
+   配合デザイナー専用の大画面UI (v1.1.0 UXアップデート)
+   ============================================================================ */
+.modal-xlarge {
+  width: 95vw !important;
+  max-width: 1200px !important;
+  height: 90vh !important;
+  max-height: 850px !important;
+  display: flex;
+  flex-direction: column;
+}
+
+.recipe-designer-modal {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.08);
+}
+
+.recipe-designer-body {
+  flex: 1;
+  overflow-y: auto !important;
+  min-height: 0;
+  max-height: calc(90vh - 120px) !important;
+}
+
+.designer-layout-grid {
+  display: grid;
+  grid-template-columns: 1.25fr 0.75fr;
+  gap: 1.5rem;
+  height: 100%;
+}
+
+@media (max-width: 950px) {
+  .designer-layout-grid {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+}
+
+.designer-left-card {
+  display: flex;
+  flex-direction: column;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+
+.designer-recipe-rows {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 520px;
+  padding-right: 0.5rem;
+}
+
+/* ----------------------------------------------------------------------------
+ * 印刷用メディアクエリ (PDF出力時に完全に帳票のみにする)
+ * ---------------------------------------------------------------------------- */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  
+  .print-area, .print-area * {
+    visibility: visible;
+  }
+  
+  .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+  }
+  
+  .no-print {
+    display: none !important;
+  }
+  
+  .excel-spec-sheet-v2 {
+    border: 2px solid #000000 !important;
+    box-shadow: none !important;
+    padding: 5mm !important; /* パディングを縮小して高さを確保 */
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+    page-break-inside: avoid;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  .excel-spec-sheet-v2 th {
+    background-color: #fffcf0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+ 
+  .excel-spec-sheet-v2 td {
+    background-color: #ffffff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  .summary-total-row {
+    background-color: #f1f5f9 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  .approval-stamps-table td {
+    height: 54px !important; /* 承認印エリアの高さを大幅に詰める */
+    padding: 0.15rem !important;
+  }
+
+  .stamp-circle {
+    width: 44px !important; /* 承認スタンプの大きさを少しタイトに調整 */
+    height: 44px !important;
+    background-color: transparent !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .stamp-circle span.stamp-dept {
+    font-size: 0.45rem !important;
+    padding-bottom: 0px !important;
+  }
+  
+  .stamp-circle span.stamp-date {
+    font-size: 0.4rem !important;
+    scale: 0.8 !important;
+  }
+  
+  .stamp-circle span.stamp-name-jp {
+    font-size: 0.55rem !important;
+    padding-top: 0px !important;
+  }
+ 
+  .sheet-header-blocks {
+    gap: 0.5rem !important;
+    padding-bottom: 0.35rem !important;
+  }
+  
+  .basic-info-blocks {
+    margin-top: 0.25rem !important; /* マージンを詰める */
+    gap: 0.5rem !important;
+  }
+ 
+  .tsubo-row {
+    margin-top: 0.15rem !important;
+  }
+ 
+  .twin-recipe-tables-container {
+    margin-top: 0.15rem !important;
+    gap: 0.5rem !important;
+  }
+ 
+  .twin-recipe-tables-container td, 
+  .twin-recipe-tables-container th {
+    padding: 0.1rem 0.3rem !important; /* レシピセルの高さを詰める */
+    height: 18px !important;
+  }
+ 
+  .summary-aggregate-row {
+    margin-top: 0.25rem !important;
+  }
+ 
+  .bottom-blocks-container {
+    margin-top: 0.25rem !important;
+    gap: 0.5rem !important;
+  }
+ 
+  .instructions-rows-table td, 
+  .instructions-rows-table th {
+    padding: 0.15rem 0.4rem !important; /* 作り方のセルの高さを詰める */
+    height: 26px !important;
+  }
+ 
+  .photo-body {
+    height: 110px !important; /* 写真枠の高さをコンパクトにして下部のはみ出しを完全防止 */
+  }
+
+  .legend-mini-table tr {
+    height: 14px !important; /* ミニ凡例のセルの高さを詰める */
+  }
+ 
+  .footer-compliance-box {
+    margin-top: 0.25rem !important;
+  }
+ 
+  .compliance-table tr {
+    height: auto !important;
+  }
+ 
+  .compliance-table th, .compliance-table td {
+    padding: 0.05rem 0.2rem !important; 
+    font-size: 0.7rem !important;
+  }
+};
+
+.designer-recipe-row {
+  transition: all 0.2s ease;
+}
+
+.designer-recipe-row:hover {
+  border-color: #0f766e !important;
+  box-shadow: 0 4px 12px rgba(15, 118, 110, 0.04);
+}
+
+
+
+.designer-weight-input:focus {
+  outline: none !important;
+  border: none !important;
+}
+
+.btn-delete-designer {
+  transition: all 0.2s;
+}
+
+.btn-delete-designer:hover {
+  background: #fee2e2 !important;
+  border-color: #fca5a5 !important;
+  color: #ef4444 !important;
+  transform: scale(1.05);
+}
+
+/* 右側：シミュレーターカード内のプログレスカラー */
+.designer-progress-fill.valid {
+  background: linear-gradient(90deg, #10b981, #059669) !important;
+}
+
+.designer-progress-fill.invalid {
+  background: linear-gradient(90deg, #f87171, #ef4444) !important;
+}
+
+.designer-gauge.gauge-success {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #065f46;
+}
+
+.designer-gauge.gauge-danger {
+  background: #fff5f5;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+}
+
+.designer-target-line {
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: #0f766e;
+  box-shadow: 0 0 4px rgba(15, 118, 110, 0.4);
+}
+
+.view-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.view-header h2 {
+  margin: 0;
+  font-size: 1.6rem;
+  color: var(--primary);
+  font-weight: 800;
+}
+
+/* メニューカードグリッド */
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 1.5rem;
+}
+
+.menu-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border-top: 4px solid var(--border);
+  padding: 1.25rem;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.menu-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08);
+}
+
+.menu-card.card-organic-valid {
+  border-top-color: var(--primary);
+}
+
+.menu-card.card-discrepancy {
+  border-top-color: var(--danger);
+  background-color: rgba(220, 38, 38, 0.01);
+  box-shadow: 0 0 10px rgba(220, 38, 38, 0.05);
+}
+
+.menu-status-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.badges-row {
+  display: flex;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+}
+
+.discrepancy-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background-color: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+.menu-details {
+  flex-grow: 1;
+}
+
+.menu-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.menu-name {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--primary);
+  margin: 0;
+}
+
+.menu-price {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--accent);
+  font-family: var(--font-sans);
+}
+
+.menu-meta-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.meta-pill {
+  font-size: 0.7rem;
+  background-color: var(--bg-sub);
+  color: var(--text-sub);
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.menu-desc {
+  font-size: 0.85rem;
+  color: var(--text-sub);
+  margin: 0 0 1rem;
+  line-height: 1.5;
+}
+
+/* レシピサマリーボックス */
+.recipe-summary-box {
+  background-color: var(--bg-sub);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem;
+}
+
+.summary-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-sub);
+  margin-bottom: 0.5rem;
+}
+
+.recipe-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.recipe-tag-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.125rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid transparent;
+}
+
+.recipe-tag-item.org {
+  background-color: var(--success-bg);
+  color: #14532d;
+  border-color: var(--success-border);
+}
+
+.recipe-tag-item.gen {
+  background-color: #f5f5f4;
+  color: #44403c;
+  border-color: #e7e5e4;
+}
+
+.recipe-tag-item.salt {
+  background-color: #fffbeb;
+  color: #78350f;
+  border-color: #fef3c7;
+}
+
+.recipe-tag-item .weight {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.menu-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px dashed var(--border);
+  padding-top: 0.75rem;
+}
+
+.id-badge {
+  font-size: 0.7rem;
+  background-color: var(--bg-sub);
+  color: var(--text-sub);
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.card-actions {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.btn-xs {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  border-radius: 4px;
+}
+
+/* フォームタブ */
+.form-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  padding: 0 1.5rem;
+  background-color: var(--bg-sub);
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-light);
+  cursor: pointer;
+  position: relative;
+  transition: color 0.2s ease;
+}
+
+.tab-btn:hover {
+  color: var(--primary);
+}
+
+.tab-btn.active {
+  color: var(--primary);
+}
+
+.tab-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background-color: var(--primary);
+  border-radius: 3px 3px 0 0;
+}
+
+/* モーダル拡張 */
+.modal-large {
+  max-width: 950px;
+}
+
+.modal-spec {
+  max-width: 1000px;
+}
+
+.grid-layout {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 1.5rem;
+}
+
+.grid-2-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.grid-3-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 768px) {
+  .grid-layout, .grid-2-col, .grid-3-col {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+}
+
+.tab-pane-content {
+  padding: 1rem 0;
+}
+
+.recipe-pane {
+  display: flex;
+  flex-direction: column;
+}
+
+.simulator-pane {
+  display: flex;
+  flex-direction: column;
+}
+
+/* レシピエディタ */
+.recipe-rows-container {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-card);
+  padding: 0.75rem;
+  max-height: 290px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.recipe-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px dashed var(--border);
+}
+
+.recipe-row:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.select-recipe-ing {
+  flex-grow: 1;
+  min-width: 150px;
+}
+
+.weight-input-box {
+  position: relative;
+  width: 90px;
+  flex-shrink: 0;
+}
+
+.weight-input-box input {
+  padding-right: 1.5rem;
+}
+
+.unit-g {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.8rem;
+  color: var(--text-light);
+}
+
+.btn-delete-row {
+  background: none;
+  border: none;
+  padding: 0.375rem;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+}
+
+.btn-delete-row:hover {
+  background-color: var(--danger-bg);
+}
+
+.salt-water-tip {
+  width: 100%;
+  color: var(--warning);
+  font-size: 0.7rem;
+  font-weight: 500;
+  margin-top: -0.25rem;
+  padding-left: 0.25rem;
+}
+
+.empty-recipe {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-light);
+  font-size: 0.85rem;
+}
+
+/* シミュレーターボード */
+.simulator-panel {
+  background: linear-gradient(135deg, #fdfbf7 0%, #f6f3eb 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+}
+
+.simulator-title {
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.simulator-details {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.sim-metric {
+  display: flex;
+  flex-direction: column;
+}
+
+.sim-label {
+  font-size: 0.7rem;
+  color: var(--text-sub);
+}
+
+.sim-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--primary);
+  font-family: var(--font-mono);
+}
+
+.sim-unit {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-sub);
+}
+
+/* プログレスバー */
+.ratio-progress-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.ratio-progress-bar {
+  position: relative;
+  height: 10px;
+  background-color: #e5e5e0;
+  border-radius: var(--radius-full);
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.progress-fill.valid {
+  background-color: var(--success);
+  box-shadow: 0 0 8px rgba(22, 163, 74, 0.3);
+}
+
+.progress-fill.invalid {
+  background-color: var(--accent);
+}
+
+.target-marker {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 3px;
+  background-color: var(--danger);
+  z-index: 10;
+}
+
+.progress-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.65rem;
+  color: var(--text-light);
+  font-family: var(--font-mono);
+  position: relative;
+}
+
+.target-label {
+  position: absolute;
+  color: var(--danger);
+  font-weight: 700;
+  transform: translateX(-50%);
+}
+
+/* 適合ボックス */
+.sim-result-box {
+  border-radius: var(--radius-sm);
+  padding: 0.75rem;
+  border: 1px solid transparent;
+}
+
+.sim-result-box.result-success {
+  background-color: var(--success-bg);
+  border-color: var(--success-border);
+  color: #14532d;
+}
+
+.sim-result-box.result-danger {
+  background-color: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: #7f1d1d;
+}
+
+.result-percentage {
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.percent-val {
+  font-size: 1.4rem;
+  font-weight: 800;
+  font-family: var(--font-mono);
+}
+
+.result-status {
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-top: 0.125rem;
+}
+
+.icon-result {
+  flex-shrink: 0;
+}
+
+.claim-discrepancy-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.25rem;
+  color: var(--danger);
+  font-weight: 600;
+  border-top: 1px dashed var(--danger-border);
+  padding-top: 0.5rem;
+}
+
+/* ----------------------------------------------------------------------------
+ * エクセル風有機料理スペック帳票 (A4縦想定・印刷対応)
+ * ---------------------------------------------------------------------------- */
+.excel-spec-sheet-v2 {
+  background-color: #ffffff;
+  color: #000000;
+  font-family: "Hiragino Mincho ProN", "Yu Mincho", "MS Mincho", serif;
+  border: 2px solid #000000;
+  padding: 2rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+  position: relative;
+  width: 100%;
+  max-width: 820px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+/* 帳票内のすべてのテーブル・枠線調整 */
+.excel-spec-sheet-v2 table {
+  border: 1.5px solid #000000 !important;
+  border-collapse: collapse !important;
+  width: 100%;
+}
+
+.excel-spec-sheet-v2 th,
+.excel-spec-sheet-v2 td {
+  border: 1px solid #000000 !important;
+  padding: 0.35rem 0.5rem;
+  color: #000000 !important;
+  vertical-align: middle;
+}
+
+/* ヘッダーセルの和風プレミアム薄黄色 background */
+.excel-spec-sheet-v2 th {
+  background-color: #fffcf0 !important;
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "MS Gothic", sans-serif;
+  font-weight: bold;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* 承認印 */
+.stamp-circle {
+  transition: transform 0.2s ease;
+  background-color: rgba(220, 38, 38, 0.02);
+  box-shadow: inset 0 0 1px rgba(220, 38, 38, 0.08);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.stamp-circle:hover {
+  transform: scale(1.05) rotate(0deg) !important;
+}
+
+/* 壺のスタイル */
+.tsubo-row svg {
+  filter: drop-shadow(0px 1px 1px rgba(0,0,0,0.15));
+}
+
+/* 写真枠のスタイル */
+.photo-box {
+  border: 1.5px solid #000000 !important;
+  border-radius: 0px !important;
+}
+
+.photo-title {
+  background-color: #fffcf0 !important;
+  border-bottom: 1.5px solid #000000 !important;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* 適合 Yes 丸囲みの SVG ellipse 手書き風アニメーション */
+.compliance-table svg ellipse {
+  stroke-dasharray: 200;
+  stroke-dashoffset: 0;
+  animation: drawComplianceCircle 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes drawComplianceCircle {
+  from {
+    stroke-dashoffset: 200;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* 重複していた古い印刷用メディアクエリを完全に削除し、中盤の極限タイト版に一本化 */
+
+.w-5 { width: 5%; }
+.w-12 { width: 12%; }
+.w-13 { width: 13%; }
+.w-15 { width: 15%; }
+.w-20 { width: 20%; }
+.w-25 { width: 25%; }
+.w-35 { width: 35%; }
+.w-40 { width: 40%; }
+.w-45 { width: 45%; }
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.pre-wrap { white-space: pre-wrap; }
+.text-muted { color: #9ca3af; }
+.text-danger-text { color: #b91c1c; }
+
+/* --- 月別提供数・年間推移グラフおよび集計表スタイル --- */
+.menu-stats-box {
+  background-color: #f8fafc;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius-sm, 6px);
+  padding: 0.75rem 0.85rem;
+}
+
+.stats-header {
+  font-size: 0.8rem;
+}
+
+/* CSSのみで作成する美しいレスポンシブ縦棒グラフ */
+.monthly-trend-chart {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  height: 80px;
+  background: #ffffff;
+  border-left: 1.5px solid var(--border, #cbd5e1);
+  border-bottom: 1.5px solid var(--border, #cbd5e1);
+  padding: 0.5rem 0.4rem 0;
+  border-radius: 2px;
+}
+
+.chart-bar-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  height: 100%;
+}
+
+.chart-bar-wrapper {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  position: relative;
+}
+
+.chart-bar {
+  width: 50%;
+  max-width: 15px;
+  background: linear-gradient(to top, #16a34a, #4ade80);
+  border-radius: 3px 3px 0 0;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  position: relative;
+}
+
+.chart-bar:hover {
+  background: linear-gradient(to top, #15803d, #22c55e);
+  transform: scaleX(1.1);
+}
+
+.chart-bar.has-value {
+  box-shadow: 0 1px 3px rgba(22, 163, 74, 0.25);
+}
+
+.bar-tooltip {
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #1e293b;
+  color: #ffffff;
+  font-size: 0.65rem;
+  padding: 0.15rem 0.35rem;
+  border-radius: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  white-space: nowrap;
+  font-family: monospace;
+  z-index: 10;
+}
+
+.chart-bar:hover .bar-tooltip {
+  opacity: 1;
+}
+
+.chart-month-label {
+  font-size: 0.6rem;
+  color: var(--text-sub, #64748b);
+  margin-top: 0.2rem;
+  font-weight: 600;
+}
+
+.stats-mini-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.725rem;
+}
+
+.stats-mini-table th, .stats-mini-table td {
+  border: 1px solid var(--border, #e2e8f0);
+  text-align: center;
+  padding: 0.25rem 0.1rem;
+}
+
+.stats-mini-table th {
+  background-color: var(--bg-sub, #f1f5f9);
+  color: var(--text-sub, #475569);
+  font-weight: 600;
+}
+
+.stats-mini-table td {
+  background-color: #ffffff;
+  color: var(--text-sub, #94a3b8);
+  font-family: monospace;
+}
+
+.stats-mini-table td.has-val {
+  color: var(--text-main, #1e293b);
+  font-weight: 700;
+  background-color: #f0fdf4;
+}
+
+.spec-stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.spec-stats-table th, .spec-stats-table td {
+  border: 1px solid #cbd5e1;
+  padding: 0.4rem;
+}
+</style>

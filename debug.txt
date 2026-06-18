@@ -1,0 +1,265 @@
+  0 |  1 | <div class="modern-spec-sheet" v-if="selectedMenuSpecData" style="font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif; color: #333; padding: 10px;">
+  1 |  1 | 
+  2 |  1 | <!-- 1. ヘッダーエリア -->
+  3 |  2 | <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; border-bottom: 2px solid #0d9488; padding-bottom: 8px;">
+  4 |  3 | <div>
+  5 |  3 | <span style="font-size: 0.7rem; font-weight: bold; color: #0f766e; letter-spacing: 0.1em; display: block; margin-bottom: 4px;">JAS 0004 ORGANIC SPECIFICATION</span>
+  6 |  3 | <h1 style="font-size: 2rem; font-weight: 900; color: #111827; margin: 0; font-family: 'Hiragino Mincho ProN', serif; letter-spacing: -0.02em;">料理スペック</h1>
+  7 |  2 | </div>
+  8 |  2 | 
+  9 |  3 | <div style="display: flex; gap: 12px;">
+ 10 |  4 | <div style="display: flex; flex-direction: column; align-items: center;">
+ 11 |  4 | <span style="font-size: 0.65rem; font-weight: bold; color: #6b7280; margin-bottom: 4px;">調理責任者承認</span>
+ 12 |  5 | <div style="width: 56px; height: 56px; border: 1.5px solid #b91c1c; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #b91c1c; transform: rotate(-3deg); font-family: serif;">
+ 13 |  5 | <span style="font-size: 0.55rem; border-bottom: 1px solid #b91c1c; width: 80%; text-align: center; padding-bottom: 1px;">厨房</span>
+ 14 |  5 | <span style="font-size: 0.5rem; font-family: monospace;">{{ selectedMenuSpecData.managerApprovalDateStamp }}</span>
+ 15 |  5 | <span style="font-size: 0.65rem; border-top: 1px solid #b91c1c; width: 80%; text-align: center; padding-top: 1px;">{{ (selectedMenuForSpec.managerApproved || '中村誠治').substring(0, 3) }}</span>
+ 16 |  4 | </div>
+ 17 |  3 | </div>
+ 18 |  4 | <div style="display: flex; flex-direction: column; align-items: center;">
+ 19 |  4 | <span style="font-size: 0.65rem; font-weight: bold; color: #6b7280; margin-bottom: 4px;">作成・格付担当</span>
+ 20 |  5 | <div style="width: 56px; height: 56px; border: 1.5px solid #b91c1c; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #b91c1c; transform: rotate(2deg); font-family: serif;">
+ 21 |  5 | <span style="font-size: 0.55rem; border-bottom: 1px solid #b91c1c; width: 80%; text-align: center; padding-bottom: 1px;">厨房</span>
+ 22 |  5 | <span style="font-size: 0.5rem; font-family: monospace;">{{ selectedMenuSpecData.creatorDateStamp }}</span>
+ 23 |  5 | <span style="font-size: 0.65rem; border-top: 1px solid #b91c1c; width: 80%; text-align: center; padding-top: 1px;">{{ (selectedMenuForSpec.creatorApproved || '田中大輔').substring(0, 3) }}</span>
+ 24 |  4 | </div>
+ 25 |  3 | </div>
+ 26 |  2 | </div>
+ 27 |  1 | </div>
+ 28 |  1 | 
+ 29 |  1 | <!-- 2. サマリー＆目標カード群 -->
+ 30 |  2 | <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 8px;">
+ 31 |  2 | <!-- 基本情報カード -->
+ 32 |  3 | <div style="background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid #e5e7eb;">
+ 33 |  4 | <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #6b7280; font-weight: 600; margin-bottom: 8px;">
+ 34 |  4 | <span>{{ selectedMenuForSpec.category || '料理' }}</span>
+ 35 |  4 | <span style="background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-family: monospace;">No.{{ selectedMenuForSpec.id }}</span>
+ 36 |  3 | </div>
+ 37 |  3 | <h2 style="font-size: 1.25rem; font-weight: 800; color: #111827; margin: 0 0 8px 0; line-height: 1.2;">{{ selectedMenuForSpec.name }}</h2>
+ 38 |  4 | <div style="display: flex; gap: 4px;">
+ 39 |  4 | <img v-for="n in 4" :key="n" src="/tsubo.png" style="width: 16px; height: 16px; object-fit: contain;" :style="{ opacity: n <= getTsuboCount(selectedMenuForSpec.organicRatio) ? 1 : 0.2, filter: n <= getTsuboCount(selectedMenuForSpec.organicRatio) ? 'none' : 'grayscale(100%)' }" />
+ 40 |  3 | </div>
+ 41 |  2 | </div>
+ 42 |  2 | 
+ 43 |  2 | <!-- スケジュールカード -->
+ 44 |  3 | <div style="background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid #e5e7eb;">
+ 45 |  4 | <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 0.85rem;">
+ 46 |  5 | <div>
+ 47 |  5 | <span style="display: block; font-size: 0.65rem; color: #6b7280; font-weight: bold; margin-bottom: 2px;">目標作成日</span>
+ 48 |  5 | <span style="font-family: monospace; color: #374151;">{{ selectedMenuSpecData.targetCreatedDateWareki }}</span>
+ 49 |  4 | </div>
+ 50 |  5 | <div>
+ 51 |  5 | <span style="display: block; font-size: 0.65rem; color: #6b7280; font-weight: bold; margin-bottom: 2px;">開始予定日</span>
+ 52 |  5 | <span style="font-family: monospace; color: #374151;">{{ selectedMenuSpecData.startDateWareki }}</span>
+ 53 |  4 | </div>
+ 54 |  5 | <div>
+ 55 |  5 | <span style="display: block; font-size: 0.65rem; color: #6b7280; font-weight: bold; margin-bottom: 2px;">内容見直し日</span>
+ 56 |  5 | <span style="font-family: monospace; color: #374151;">{{ selectedMenuSpecData.reviewDateWareki }}</span>
+ 57 |  4 | </div>
+ 58 |  5 | <div>
+ 59 |  5 | <span style="display: block; font-size: 0.65rem; color: #6b7280; font-weight: bold; margin-bottom: 2px;">達成期限</span>
+ 60 |  5 | <span style="color: #374151; font-weight: 600;">{{ selectedMenuForSpec.deadline ? selectedMenuForSpec.deadline + ' (一年間)' : '一年間' }}</span>
+ 61 |  4 | </div>
+ 62 |  3 | </div>
+ 63 |  2 | </div>
+ 64 |  2 | 
+ 65 |  2 | <!-- 目標・変更カード -->
+ 66 |  3 | <div style="background: #f0fdfa; padding: 12px; border-radius: 8px; border: 1px solid #ccfbf1;">
+ 67 |  4 | <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+ 68 |  5 | <div>
+ 69 |  5 | 
+ 70 |  5 | <!-- 3. レシピ (2カラム) -->
+ 71 |  6 | <div style="margin-bottom: 8px;">
+ 72 |  6 | <h3 style="font-size: 0.9rem; font-weight: bold; color: #1f2937; margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
+ 73 |  6 | <span style="width: 8px; height: 8px; border-radius: 50%; background: #0d9488; display: inline-block;"></span>
+ 74 |  6 | 原材料配合割合 (1食あたり)
+ 75 |  6 | </h3>
+ 76 |  6 | 
+ 77 |  7 | <div style="display: flex; gap: 12px; align-items: flex-start;">
+ 78 |  7 | <!-- 左カラム -->
+ 79 |  8 | <div style="flex: 1; min-width: 0; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
+ 80 |  8 | <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.75rem;">
+ 81 |  8 | <thead>
+ 82 |  8 | <tr style="background: #f9fafb; border-bottom: 1px solid #e5e7eb; color: #4b5563;">
+ 83 |  8 | <th style="padding: 8px; font-weight: 600; text-align: center; width: 30px;">No</th>
+ 84 |  8 | <th style="padding: 8px; font-weight: 600;">原材料名</th>
+ 85 |  8 | <th style="padding: 8px; font-weight: 600; text-align: center;">区分</th>
+ 86 |  8 | <th style="padding: 8px; font-weight: 600; text-align: right;">重量</th>
+ 87 |  8 | <th style="padding: 8px; font-weight: 600; text-align: right;">割合</th>
+ 88 |  8 | <th style="padding: 8px; font-weight: 600; text-align: center;">JAS記号</th>
+ 89 |  8 | </tr>
+ 90 |  8 | </thead>
+ 91 |  8 | <tbody>
+ 92 |  8 | <tr v-for="(item, idx) in selectedMenuSpecData.ingredients.slice(0, Math.ceil(selectedMenuSpecData.ingredients.length / 2))" :key="idx" style="border-bottom: 1px solid #f3f4f6;">
+ 93 |  8 | <td style="padding: 8px; font-family: monospace; color: #6b7280; text-align: center;">{{ idx + 1 }}</td>
+ 94 |  8 | <td style="padding: 8px; font-weight: bold; color: #1f2937;">{{ item.name }}</td>
+ 95 |  8 | <td style="padding: 8px; text-align: center;">
+ 96 |  8 | <span style="display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; font-weight: bold;"
+ 97 |  8 | :style="{ background: item.organicType === 'organic' ? '#dcfce7' : (item.organicType === 'salt_water' ? '#dbeafe' : '#f3f4f6'), color: item.organicType === 'organic' ? '#166534' : (item.organicType === 'salt_water' ? '#1e40af' : '#4b5563') }">
+ 98 |  8 | {{ item.organicType === 'organic' ? '有機JAS' : (item.organicType === 'salt_water' ? '水/塩(除外)' : '一般') }}
+ 99 |  8 | </span>
+100 |  8 | </td>
+101 |  8 | <td style="padding: 8px; text-align: right; font-family: monospace; color: #374151;">{{ item.amount }}g</td>
+102 |  8 | <td style="padding: 8px; text-align: right; font-family: monospace; font-weight: 600;" :style="{ color: item.organicType === 'organic' ? '#15803d' : '#374151' }">{{ item.percentage }}%</td>
+103 |  8 | <td style="padding: 8px; text-align: center; font-weight: bold; color: #15803d; font-family: monospace;">{{ item.symbol }}</td>
+104 |  8 | </tr>
+105 |  8 | </tbody>
+106 |  8 | </table>
+107 |  7 | </div>
+108 |  7 | 
+109 |  7 | <!-- 右カラム -->
+110 |  8 | <div style="flex: 1; min-width: 0; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
+111 |  8 | <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.75rem;">
+112 |  8 | <thead>
+113 |  8 | <tr style="background: #f9fafb; border-bottom: 1px solid #e5e7eb; color: #4b5563;">
+114 |  8 | <th style="padding: 8px; font-weight: 600; text-align: center; width: 30px;">No</th>
+115 |  8 | <th style="padding: 8px; font-weight: 600;">原材料名</th>
+116 |  8 | <th style="padding: 8px; font-weight: 600; text-align: center;">区分</th>
+117 |  8 | <th style="padding: 8px; font-weight: 600; text-align: right;">重量</th>
+118 |  8 | <th style="padding: 8px; font-weight: 600; text-align: right;">割合</th>
+119 |  8 | <th style="padding: 8px; font-weight: 600; text-align: center;">JAS記号</th>
+120 |  8 | </tr>
+121 |  8 | </thead>
+122 |  8 | <tbody>
+123 |  8 | <tr v-for="(item, idx) in selectedMenuSpecData.ingredients.slice(Math.ceil(selectedMenuSpecData.ingredients.length / 2))" :key="idx + Math.ceil(selectedMenuSpecData.ingredients.length / 2)" style="border-bottom: 1px solid #f3f4f6;">
+124 |  8 | <td style="padding: 8px; font-family: monospace; color: #6b7280; text-align: center;">{{ idx + 1 + Math.ceil(selectedMenuSpecData.ingredients.length / 2) }}</td>
+125 |  8 | <td style="padding: 8px; font-weight: bold; color: #1f2937;">{{ item.name }}</td>
+126 |  8 | <td style="padding: 8px; text-align: center;">
+127 |  8 | <span style="display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; font-weight: bold;"
+128 |  8 | :style="{ background: item.organicType === 'organic' ? '#dcfce7' : (item.organicType === 'salt_water' ? '#dbeafe' : '#f3f4f6'), color: item.organicType === 'organic' ? '#166534' : (item.organicType === 'salt_water' ? '#1e40af' : '#4b5563') }">
+129 |  8 | {{ item.organicType === 'organic' ? '有機JAS' : (item.organicType === 'salt_water' ? '水/塩(除外)' : '一般') }}
+130 |  8 | </span>
+131 |  8 | </td>
+132 |  8 | <td style="padding: 8px; text-align: right; font-family: monospace; color: #374151;">{{ item.amount }}g</td>
+133 |  8 | <td style="padding: 8px; text-align: right; font-family: monospace; font-weight: 600;" :style="{ color: item.organicType === 'organic' ? '#15803d' : '#374151' }">{{ item.percentage }}%</td>
+134 |  8 | <td style="padding: 8px; text-align: center; font-weight: bold; color: #15803d; font-family: monospace;">{{ item.symbol }}</td>
+135 |  8 | </tr>
+136 |  8 | </tbody>
+137 |  8 | </table>
+138 |  7 | </div>
+139 |  6 | </div>
+140 |  6 | 
+141 |  6 | <!-- 合計フッター -->
+142 |  7 | <div style="margin-top: 8px; display: flex; justify-content: flex-end; align-items: center; background: #f9fafb; border: 1px solid #e5e7eb; padding: 8px 16px; border-radius: 8px; font-size: 0.8rem;">
+143 |  7 | <span style="font-weight: bold; color: #1f2937; margin-right: 16px;">合計</span>
+144 |  7 | <span style="font-family: monospace; font-weight: bold; color: #111827;">{{ selectedMenuSpecData.totalWeight }}g</span>
+145 |  6 | </div>
+146 |  6 | 
+147 |  6 | 
+148 |  5 | </div>
+149 |  5 | 
+150 |  5 | <!-- 4. 有機サマリー・手順・写真 -->
+151 |  6 | <div style="display: flex; gap: 12px; margin-bottom: 8px; align-items: flex-start;">
+152 |  6 | 
+153 |  6 | <!-- 左: 作り方 -->
+154 |  7 | <div style="flex: 2; min-width: 0;">
+155 |  7 | <h3 style="font-size: 0.9rem; font-weight: bold; color: #1f2937; margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
+156 |  7 | <span style="width: 8px; height: 8px; border-radius: 50%; background: #f97316; display: inline-block;"></span>
+157 |  7 | 調理手順
+158 |  7 | </h3>
+159 |  8 | <div style="background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px;">
+160 |  9 | <div style="display: flex; flex-direction: column; gap: 12px;">
+161 | 10 | <div v-for="row in selectedMenuSpecData.instructionRows" :key="row.no" style="display: flex; gap: 12px; align-items: flex-start;">
+162 | 11 | <div style="flex-shrink: 0;">
+163 | 11 | <span style="display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #ffedd5; color: #c2410c; font-size: 0.65rem; font-weight: bold;">{{ row.no }}</span>
+164 | 10 | </div>
+165 | 10 | <p style="margin: 0; font-size: 0.75rem; color: #374151; line-height: 1.6; font-weight: 500; white-space: pre-wrap; padding-top: 2px;">{{ row.text }}</p>
+166 |  9 | </div>
+167 |  8 | </div>
+168 |  7 | </div>
+169 |  6 | </div>
+170 |  6 | 
+171 |  6 | <!-- 備考 (移動先) -->
+172 |  6 | <h3 style="font-size: 0.9rem; font-weight: bold; color: #1f2937; margin: 12px 0 8px 0; display: flex; align-items: center; gap: 8px;">
+173 |  6 | <span style="width: 8px; height: 8px; border-radius: 50%; background: #eab308; display: inline-block;"></span>
+174 |  6 | 備考
+175 |  6 | </h3>
+176 |  7 | <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px; font-size: 0.75rem; color: #92400e; min-height: 60px;">
+177 |  7 | <div style="white-space: pre-wrap; line-height: 1.5;">{{ selectedMenuForSpec.remarks || '' }}</div>
+178 |  6 | </div>
+179 |  6 | 
+180 |  6 | <!-- 右: 有機サマリー＆写真 -->
+181 |  7 | <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px;">
+182 |  7 | 
+183 |  7 | <!-- 有機・非有機サマリー -->
+184 |  8 | <div style="display: flex; flex-direction: column; gap: 12px;">
+185 |  8 | <h3 style="font-size: 0.9rem; font-weight: bold; color: #1f2937; margin: 0; display: flex; align-items: center; gap: 8px;">
+186 |  8 | <span style="width: 8px; height: 8px; border-radius: 50%; background: #16a34a; display: inline-block;"></span>
+187 |  8 | 有機JAS 適合集計
+188 |  8 | </h3>
+189 |  8 | 
+190 |  8 | <!-- 有機カード -->
+191 |  9 | <div style="background: #15803d; border-radius: 12px; padding: 16px; color: white; position: relative;">
+192 |  9 | <span style="color: #bbf7d0; font-size: 0.65rem; font-weight: bold; letter-spacing: 0.1em; margin-bottom: 4px; display: block;">ORGANIC RATIO</span>
+193 | 10 | <div style="display: flex; align-items: baseline; justify-content: space-between;">
+194 | 10 | <span style="font-size: 2rem; font-weight: 900; letter-spacing: -0.05em; line-height: 1;">{{ selectedMenuSpecData.organicRatio }}<span style="font-size: 1.25rem; margin-left: 4px;">%</span></span>
+195 |  9 | </div>
+196 | 10 | <div style="margin-top: 12px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2); display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem;">
+197 | 10 | <span style="color: #bbf7d0;">有機重量合計</span>
+198 | 10 | <span style="font-family: monospace; font-size: 1rem; font-weight: bold;">{{ selectedMenuSpecData.organicWeight }}g</span>
+199 |  9 | </div>
+200 |  8 | </div>
+201 |  8 | 
+202 |  8 | <!-- 非有機カード -->
+203 |  9 | <div style="background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; justify-content: center;">
+204 |  9 | <span style="color: #6b7280; font-size: 0.65rem; font-weight: bold; letter-spacing: 0.1em; margin-bottom: 4px; display: block;">NON-ORGANIC RATIO</span>
+205 | 10 | <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 8px;">
+206 | 10 | <span style="color: #1f2937; font-weight: bold; font-size: 1.25rem; line-height: 1;">{{ selectedMenuSpecData.generalRatio }}%</span>
+207 | 10 | <span style="font-family: monospace; color: #4b5563; font-size: 0.85rem; font-weight: 600;">{{ selectedMenuSpecData.generalWeight }}g</span>
+208 |  9 | </div>
+209 |  9 | <!-- プログレスバー風 -->
+210 | 10 | <div style="width: 100%; background: #f3f4f6; border-radius: 4px; height: 8px; margin-top: 4px; overflow: hidden;">
+211 | 10 | <div style="background: #22c55e; height: 100%; border-radius: 4px;" :style="{ width: `${Math.min(selectedMenuSpecData.organicRatio, 100)}%` }"></div>
+212 |  9 | </div>
+213 | 10 | <div style="display: flex; justify-content: space-between; font-size: 0.55rem; color: #9ca3af; margin-top: 4px; font-weight: bold;">
+214 | 10 | <span>0%</span>
+215 | 10 | <span>基準 80%</span>
+216 | 10 | <span>100%</span>
+217 |  9 | </div>
+218 |  8 | </div>
+219 |  7 | </div>
+220 |  7 | 
+221 |  7 | <!-- 写真 -->
+222 |  8 | <div>
+223 |  8 | <h3 style="font-size: 0.9rem; font-weight: bold; color: #1f2937; margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
+224 |  8 | <span style="width: 8px; height: 8px; border-radius: 50%; background: #3b82f6; display: inline-block;"></span>
+225 |  8 | 完成写真
+226 |  8 | </h3>
+227 |  9 | <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; height: 120px; display: flex; align-items: center; justify-content: center;">
+228 |  9 | <img v-if="selectedMenuForSpec.imageUrl" :src="selectedMenuForSpec.imageUrl" style="width: 100%; height: 100%; object-fit: cover;" />
+229 | 10 | <div v-else style="display: flex; flex-direction: column; align-items: center; justify-content: center; color: #9ca3af;">
+230 | 10 | <Camera :size="24" style="margin-bottom: 4px; opacity: 0.5;" />
+231 | 10 | <span style="font-size: 0.65rem; font-weight: bold;">[画像未登録]</span>
+232 |  9 | </div>
+233 |  8 | </div>
+234 |  7 | </div>
+235 |  7 | 
+236 |  6 | </div>
+237 |  5 | </div>
+238 |  5 | <!-- 5. JAS規格フッター -->
+239 |  6 | <div>
+240 |  6 | <h3 style="font-size: 0.9rem; font-weight: bold; color: #1f2937; margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
+241 |  6 | <span style="width: 8px; height: 8px; border-radius: 50%; background: #6366f1; display: inline-block;"></span>
+242 |  6 | 有機JAS格付・適合及び表示基準
+243 |  6 | </h3>
+244 |  7 | <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+245 |  8 | <div style="background: #eef2ff; border: 1px solid #e0e7ff; border-radius: 8px; padding: 12px; display: flex; align-items: center; justify-content: space-between;">
+246 |  8 | <span style="font-size: 0.65rem; font-weight: bold; color: #3730a3;">格付表示対象の有無</span>
+247 |  9 | <div style="display: flex; align-items: center; gap: 6px; background: #ffffff; padding: 2px 8px; border-radius: 12px; border: 1px solid #e0e7ff;">
+248 |  9 | <span style="width: 6px; height: 6px; border-radius: 50%;" :style="{ background: selectedMenuForSpec.isValidOrganic ? '#22c55e' : '#ef4444' }"></span>
+249 |  9 | <span style="font-size: 0.75rem; font-weight: bold; color: #1f2937;">Yes</span>
+250 |  8 | </div>
+251 |  7 | </div>
+252 |  8 | <div style="background: #eef2ff; border: 1px solid #e0e7ff; border-radius: 8px; padding: 12px; display: flex; align-items: center; justify-content: space-between;">
+253 |  8 | <span style="font-size: 0.65rem; font-weight: bold; color: #3730a3;">記号による表示</span>
+254 |  8 | <span style="font-size: 0.75rem; font-weight: bold; color: #1f2937;">{{ selectedMenuForSpec.displayStyle || '記号により表示' }}</span>
+255 |  7 | </div>
+256 |  8 | <div style="background: #eef2ff; border: 1px solid #e0e7ff; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; justify-content: center;">
+257 |  8 | <span style="font-size: 0.6rem; font-weight: bold; color: #3730a3; margin-bottom: 2px;">適合の表示内容</span>
+258 |  8 | <span style="font-size: 0.7rem; font-weight: bold; color: #1f2937;">期間: {{ selectedMenuForSpec.displayPeriod || '通年' }} / 方法: {{ selectedMenuForSpec.displayMethod || 'メニュー掲載' }}</span>
+259 |  7 | </div>
+260 |  6 | </div>
+261 |  5 | </div>
+262 |  5 | 
+263 |  4 | </div>
+264 |  3 | </div>

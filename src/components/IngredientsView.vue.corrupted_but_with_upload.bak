@@ -1,0 +1,879 @@
+﻿<script setup>
+import { ref, computed } from 'vue';
+import { restaurantStore } from '../store/restaurantStore';
+import { 
+  Sprout, 
+  Plus, 
+  Trash2, 
+  Edit3, 
+  AlertTriangle, 
+  Calendar, 
+  Search,
+  Check,
+  X,
+  PlusCircle,
+  HelpCircle,
+  RefreshCw // 譁E��隕剰�E��E�蜉
+} from 'lucide-vue-next';
+
+const state = restaurantStore.state;
+const ingredients = computed(() => state.ingredients);
+
+// 讀懁E���E� & 繝輔ぅ繝ｫ繧�E�繝ｼ
+const searchQuery = ref('');
+const filterType = ref('all'); // all, organic, general, salt_water
+
+const filteredIngredients = computed(() => {
+  return ingredients.value.filter(ing => {
+    const matchesSearch = ing.name.toLowerCase().includes(searchQuery.value.toLowerCase()) || 
+                          ing.supplier.toLowerCase().includes(searchQuery.value.toLowerCase());
+    const matchesFilter = filterType.value === 'all' || ing.type === filterType.value;
+    return matchesSearch && matchesFilter;
+  });
+});
+
+// 繝｢繝ｼ繝繝ｫ繝ｻ繝輔か繝ｼ繝迥�E�諷・const showModal = ref(false);
+const isEditing = ref(false);
+const currentId = ref(null);
+
+const form = ref({
+  name: '',
+  supplier: '',
+  type: 'organic', // organic, general, salt_water
+  hasCertificate: true,
+  certificateExpiry: '',
+  hasJasLabel: true
+});
+
+const errorMessage = ref('');
+
+// 繝｢繝ｼ繝繝ｫ繧�E�繝ｼ繝励Φ (譁E��隕�E
+const openAddModal = () => {
+  isEditing.value = false;
+  currentId.value = null;
+  form.value = {
+    name: '',
+    supplier: '',
+    type: 'organic',
+    hasCertificate: true,
+    certificateExpiry: '',
+    hasJasLabel: true,
+    jasCertUrl: ''
+  };
+  errorMessage.value = '';
+  showModal.value = true;
+};
+
+// 繝｢繝ｼ繝繝ｫ繧�E�繝ｼ繝励Φ (邱�E�髮・
+const openEditModal = (ing) => {
+  isEditing.value = true;
+  currentId.value = ing.id;
+  form.value = {
+    name: ing.name,
+    supplier: ing.supplier,
+    type: ing.type,
+    hasCertificate: ing.hasCertificate,
+    certificateExpiry: ing.certificateExpiry,
+    hasJasLabel: ing.hasJasLabel,
+    jasCertUrl: ing.jasCertUrl || ing.certUrl || ''
+  };
+  errorMessage.value = '';
+  showModal.value = true;
+};
+
+// JASマ�Eク・証明書写真のアチE�Eロード�E琁E
+const handleJasCertUpload = (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    form.value.jasCertUrl = e.target.result;
+  };
+  reader.readAsDataURL(file);
+};
+
+// 菫晏ｭ倥ぁE���E�繧�E�繝ｧ繝ｳ
+const saveIngredient = () => {
+  if (!form.value.name.trim()) {
+      errorMessage.value = '蜴滓攝譁吝錐繧貞E蜉帙＠縺E縺上□縺輔＞';
+    return;
+  }
+  if (!form.value.supplier.trim()) {
+    errorMessage.value = '莉募・蜈医�E�蜈�E�蜉帙＠縺�E�縺上□縺輔＞縲・';
+    return;
+  }
+  if (form.value.type === 'organic' && form.value.hasCertificate && !form.value.certificateExpiry) {
+    errorMessage.value = '譛画�E�溷玁E��・°縺�E�險�E�譏取嶌譛峨�E�縺�E�蝣�E�蜷医・縲∵怏蜉�E�譛滁E��繧貞�E蜉帙＠縺�E�縺上□縺輔＞縲・';
+    return;
+  }
+
+  try {
+    if (isEditing.value) {
+      restaurantStore.updateIngredient(currentId.value, form.value);
+    } else {
+      restaurantStore.addIngredient(form.value);
+    }
+    showModal.value = false;
+  } catch (err) {
+    errorMessage.value = err.message;
+  }
+};
+
+// 蜑企勁繧�E�繧�E�繧�E�繝ｧ繝ｳ
+const deleteIngredient = (id, name) => {
+  if (confirm(`蜴滓攝譁吶€・${name}縲阪E蜑企勁縺励※繧めEE繧阪E縺・〒縺吶°・`)) {
+    try {
+      restaurantStore.deleteIngredient(id);
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+};
+
+// 險�E�譏取嶌譛滁E��蛻・�E�繝�Eぉ繝�EぁE
+const checkExpiryStatus = (expiryDate, type) => {
+  if (type !== 'organic' || !expiryDate) return 'none';
+  const today = new Date();
+  const expiry = new Date(expiryDate);
+  const warningLimit = new Date();
+  warningLimit.setDate(today.getDate() + 30);
+
+  if (expiry <= today) return 'expired';
+  if (expiry <= warningLimit) return 'warning';
+  return 'good';
+};
+
+// Ri-Ry-Link 縺九ｉ縺�E�譛画�E�溷次譚�E侭蜷梧悁E���E�繝�E・繝�E(繝ｦ繝ｼ繧�E�繝ｼ謚ｼ荳区凾縺�E�縺�E�蜍穂ｽ懊�E繧句�E�牙�E繝ｻ霁E��驥剰�E��E�險・
+const isSyncing = ref(false);
+const syncResult = ref(null);
+const syncError = ref(null);
+
+// 隱崎ｨ�E�繝｢繝ｼ繝繝ｫ髢�E�騾�E�繧�E�繝�E・繝�E(遒ｺ螳溘�E螳溘ョ繝ｼ繧�E�隱�E�縺�E�霎ｼ縺�E�逕ｨ)
+const showAuthModal = ref(false);
+const authForm = ref({
+  email: '',
+  password: ''
+});
+const authError = ref('');
+const isAuthenticating = ref(false);
+
+
+const handleSyncFromRiRyLink = async () => {
+  isSyncing.value = true;
+  syncResult.value = null;
+  syncError.value = null;
+  authError.value = '';
+  try {
+    const res = await restaurantStore.syncFromRiRyLink();
+    if (res.requiresAuth) {
+      // 譛ｪ繝ｭ繧�E�繧�E�繝ｳ縺�E�蝣�E�蜷医・縲∬�E�崎ｨ�E�繝繧�E�繧�E�繝ｭ繧�E�繧定｡�E�遉ｺ縺吶�E�E      showAuthModal.value = true;
+    } else {
+      syncResult.value = res.message;
+      // 7遘貞ｾ後�E騾夂衍繧定�E蜍墓ｶ亥悁E(縺翫�E�縺�E�縺�E�縺誘X)
+      setTimeout(() => {
+        syncResult.value = null;
+      }, 7000);
+    }
+  } catch (err) {
+    console.error(err);
+    syncError.value = err.message || 'Ri-Ry-Link縺九ｉ縺�E�蜷梧悁E���E�螟ｱ謨励�E�縺�E�縺励◁E��・';
+  } finally {
+    isSyncing.value = false;
+  }
+};
+
+const submitAuthAndSync = async () => {
+  if (!authForm.value.email.trim() || !authForm.value.password.trim()) {
+    authError.value = '繝｡繝ｼ繝ｫ繧�E�繝峨Ξ繧�E�縺�E�繝代せ繝ｯ繝ｼ繝峨�E�蜈�E�蜉帙＠縺�E�縺上□縺輔＞縲・';
+    return;
+  }
+  
+  isAuthenticating.value = true;
+  authError.value = '';
+  try {
+    const res = await restaurantStore.syncFromRiRyLink(authForm.value.email, authForm.value.password);
+    if (res.requiresAuth) {
+      authError.value = '繝ｭ繧�E�繧�E�繝ｳ縺�E�螟ｱ謨励�E�縺�E�縺励◁E��めE��繧�E�繧�E�繝ｳ繝域ュ蝣�E�繧偵�E�縺・�E�蠎ｦ縺顔｢�E�縺九ａ縺上□縺輔＞縲・';
+    } else {
+      // 繝ｭ繧�E�繧�E�繝ｳ・・酔譛溷�E�御�E�・      showAuthModal.value = false;
+      syncResult.value = res.message;
+      // 蜈･蜉帙ヵ繧�E�繝ｼ繝繧�E�繝ｪ繧�E�
+      authForm.value.email = '';
+      authForm.value.password = '';
+      
+      setTimeout(() => {
+        syncResult.value = null;
+      }, 7000);
+    }
+  } catch (err) {
+    console.error(err);
+    authError.value = err.message || '繧�E�繧�E�繝ｳ繧�E�繝ｳ縺�E�螟ｱ謨励�E�縺�E�縺励◁E��・';
+  } finally {
+    isAuthenticating.value = false;
+  }
+};
+
+const selectQuickAccount = (email) => {
+  authForm.value.email = email;
+};
+
+// 螳牙�E縺九▽蜷梧悁E��・�E�医・繝�E・繧�E�繝�E・繝悶Ο繝�Eけ蝗樣∩・峨↓蛻�E�繧�E�繝悶〒險�E�譏取嶌繧定｡�E�遉ｺ繝ｻ蜊ｰ蛻�E�縺吶�E�髢�E�謨�E�
+const openSecureCertificate = (fileUrl) => {
+  if (!fileUrl) return;
+  try {
+    let targetUrl = fileUrl;
+    
+    // Base64繝�E・繧�E�URL縺�E�蝣�E�蜷医。lob URL縺�E�螟画鋤縺励※繝悶Λ繧�E�繧�E�縺�E�繧�E�繧�E�繝･繝ｪ繝�EぁE���E�髯・data:縺�E�繝医ャ繝励Ξ繝吶Ν繝翫ン繧�E�繝ｼ繧�E�繝ｧ繝ｳ遖∵�E��E�)繧貞屓驕ｿ
+    if (fileUrl.startsWith('data:')) {
+      const parts = fileUrl.split(',');
+      const mime = parts[0].match(/:(.*?);/)[1];
+      const bstr = atob(parts[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      const blob = new Blob([u8arr], { type: mime });
+      targetUrl = URL.createObjectURL(blob);
+    }
+    
+    const newWindow = window.open(targetUrl, '_blank');
+    if (!newWindow) {
+      alert('繝昴ャ繝励ぁE���E・縺後ヶ繝ｭ繝�Eけ縺輔ｌ縺�E�縺励◁E��めE��繝ｩ繧�E�繧�E�縺�E�繧�E�繝峨Ξ繧�E�繝�E・蜿�E�蛛ｴ縺�E�縺めE��繝昴ャ繝励ぁE���E・繝悶Ο繝�Eけ險�E�螳壹�E�遒�E�隱阪�E�縲√！E���E�繧�E�繧�E�繝医〒縺�E�繝昴ャ繝励ぁE���E・繧定ｨ�E�蜿�E�縺励※縺上□縺輔＞縲・);
+    }
+  } catch (err) {
+    console.error('險�E�譏取嶌縺�E�陦�E�遉ｺ繧�E�繝ｩ繝ｼ:', err);
+    alert('險�E�譏取嶌縺�E�陦�E�遉ｺ縺�E�螟ｱ謨励�E�縺�E�縺励◁E ' + err.message);
+  }
+};
+</script>
+
+<template>
+  <div class="animate-fade-in">
+    <div class="view-header mb-6">
+      <div class="header-title">
+        <h2 class="flex items-center gap-2"><Sprout :size="24" /> 蜴滓攝譁吶・繧�E�繧�E�繝ｼ邂｡送E�E</h2>
+        <p class="text-sub">莉募・繧後ｋ縺吶∋縺�E�縺�E�蜴滓攝譁吶�E�逋ｻ骭�E�縺励∵怏讖櫟AS險�E�譏取嶌繧・�E��E�莉倩�E��E�遉ｺ・・AS繝槭・繧�E�・峨・譛�E┌繧堤�E��E�送E�E�E�縺�E�縺吶・<</p>
+      </div>
+      <div style="display: flex; gap: 0.75rem; align-items: center;">
+        <button 
+          class="btn btn-outline flex items-center gap-2" 
+          style="border-color: var(--primary); color: var(--primary); font-weight: 600;" 
+          @click="handleSyncFromRiRyLink" 
+          :disabled="isSyncing"
+        >
+          <RefreshCw :size="16" :class="isSyncing ? 'animate-spin' : ''" />
+          {{ isSyncing ? '蜷梧悁E���E�...' : 'Ri-Ry-Link縺�E�蜷梧悁E' }}
+        </button>
+        <button class="btn btn-primary" @click="openAddModal">
+          <Plus :size="18" /> 譁E��隕丞次譚�E侭逋ｻ骭�E�
+        </button>
+      </div>
+    </div>
+
+    <!-- 蜷梧悁E��先棡騾夂衁E(縺翫�E�縺�E�縺�E�縺鈴夂衁E -->
+    <Transition name="fade">
+      <div v-if="syncResult" class="alert alert-success py-3 px-4 mb-6 text-sm flex items-center justify-between" style="border-left: 4px solid #16a34a; background: rgba(22, 163, 74, 0.05); border-radius: var(--radius-sm); display: flex; justify-content: space-between; width: 100%;">
+        <div style="display: flex; align-items: center; gap: 0.5rem; color: #16a34a; font-weight: 500;">
+          <Check :size="18" />
+          <span>{{ syncResult }}</span>
+        </div>
+        <button class="btn-close" style="padding: 0; background: none; border: none; cursor: pointer; color: #16a34a;" @click="syncResult = null">
+          <X :size="16" />
+        </button>
+      </div>
+    </Transition>
+    
+    <Transition name="fade">
+      <div v-if="syncError" class="alert alert-danger py-3 px-4 mb-6 text-sm flex items-center justify-between" style="border-left: 4px solid #dc2626; background: rgba(220, 38, 38, 0.05); border-radius: var(--radius-sm); display: flex; justify-content: space-between; width: 100%;">
+        <div style="display: flex; align-items: center; gap: 0.5rem; color: #dc2626; font-weight: 500;">
+          <AlertTriangle :size="18" />
+          <span>{{ syncError }}</span>
+        </div>
+        <button class="btn-close" style="padding: 0; background: none; border: none; cursor: pointer; color: #dc2626;" @click="syncError = null">
+          <X :size="16" />
+        </button>
+      </div>
+    </Transition>
+
+    <!-- 讀懁E���E� & 繝輔ぅ繝ｫ繧�E�繝ｼ繝�E・ -->
+    <div class="filter-bar card mb-6">
+      <div class="search-input-wrapper">
+        <Search class="search-icon" :size="18" />
+        <input 
+          v-model="searchQuery" 
+          type="text" 
+          placeholder="蜴滓攝譁吝錐縲∽�E�募�E蜈医〒讀懁E���E�..." 
+          class="input-organic"
+        />
+      </div>
+      <div class="filter-options">
+        <label class="filter-label">蛹�E�蛻・�E�・</label>
+        <div class="filter-buttons">
+          <button 
+            :class="['filter-btn', filterType === 'all' ? 'active' : '']" 
+            @click="filterType = 'all'"
+          >
+            縺吶∋縺�E�
+          </button>
+          <button 
+            :class="['filter-btn', filterType === 'organic' ? 'active' : '']" 
+            @click="filterType = 'organic'"
+          >
+            譛画�E�櫟AS隱榊ｮ壼刀
+          </button>
+          <button 
+            :class="['filter-btn', filterType === 'general' ? 'active' : '']" 
+            @click="filterType = 'general'"
+          >
+            荳闊ｬ鬟溷刀
+          </button>
+          <button 
+            :class="['filter-btn', filterType === 'salt_water' ? 'active' : '']" 
+            @click="filterType = 'salt_water'"
+          >
+            豌ｴ繝ｻ鬟溷�E��E� (險育�E�鈴勁螟・
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 蜴滓攝譁吶ユ繝ｼ繝悶΁E-->
+          <div class="table-container">
+
+      <table class="table-organic">
+        <thead>
+          <tr>
+            <th>蜴滓攝譁吝錁E</th>
+            <th>蛹E・</th>
+            <th>莉募・蜈�E</th>
+            <th>JAS險�E�譏取嶁E</th>
+            <th>險�E�譏取嶌譛牙柑譛滁E��</th>
+            <th>JAS陦�E�遉ｺ譛�E━E</th>
+            <th style="width: 100px; text-align: center;">謫堺</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-if="filteredIngredients.length === 0">
+            <td colspan="7" class="text-center text-light py-8">
+              隧�E�蠖薙☁E��句次譚�E侭縺瑚ｦ九▽縺九ｊ縺�E�縺帙ｓ縺�E�縺励◁E��・            </td>
+          </tr>
+          <tr v-for="ing in filteredIngredients" :key="ing.id" :class="checkExpiryStatus(ing.certificateExpiry, ing.type) === 'expired' ? 'row-expired' : ''">
+            <td>
+              <div class="font-semibold">{{ ing.name }}</div>
+              <span class="id-badge">{{ ing.id }}</span>
+            </td>
+            <td>
+              <span v-if="ing.type === 'organic'" class="badge badge-success">譛画�E�櫟AS蜩・</span>
+              <span v-else-if="ing.type === 'general'" class="badge badge-neutral">荳闊ｬ鬟溷刀</span>
+              <span v-else-if="ing.type === 'salt_water'" class="badge badge-warning">豌ｴ繝ｻ鬟溷�E��E�</span>
+            </td>
+            <td>{{ ing.supplier }}</td>
+            <td>
+              <span v-if="ing.type === 'organic'" class="flex items-center gap-1 text-sm font-medium">
+                <template v-if="ing.jasCertUrl || ing.certUrl">
+                  <Check class="text-success" :size="16" />
+                  <a href="#" @click.prevent="openSecureCertificate(ing.jasCertUrl || ing.certUrl)" class="text-primary hover:underline font-bold" title="繧�E�繝ｪ繝�Eけ縺励※險�E�譏取嶌繧定｡�E�遉ｺ繝ｻ蜊ｰ蛻�E�" style="color: var(--primary); display: inline-flex; align-items: center; gap: 0.15rem;">
+                    謠仙�E貂�E���塁E                  </a>
+                </template>
+                <template v-else>
+                  <X class="text-danger" :size="16" />
+                  <span class="text-danger font-semibold">譛ｪ謠仙�E</span>
+                </template>
+              </span>
+              <span v-else class="text-light text-sm">-</span>
+            </td>
+            <td>
+              <span v-if="ing.type === 'organic' && ing.hasCertificate" class="flex items-center gap-1 font-mono text-sm">
+                <Calendar :size="14" class="text-sub" />
+                <span :class="[
+                  checkExpiryStatus(ing.certificateExpiry, ing.type) === 'expired' ? 'text-danger font-bold' : '',
+                  checkExpiryStatus(ing.certificateExpiry, ing.type) === 'warning' ? 'text-warning font-bold' : ''
+                ]">
+                  {{ ing.certificateExpiry }}
+                </span>
+                <span v-if="checkExpiryStatus(ing.certificateExpiry, ing.type) === 'expired'" class="small-alert">
+                  [譛滁E��蛻・�E�]
+                </span>
+                <span v-else-if="checkExpiryStatus(ing.certificateExpiry, ing.type) === 'warning'" class="small-alert warn">
+                  [霑第律譛滁E��]
+                </span>
+              </span>
+              <span v-else class="text-light text-sm">-</span>
+            </td>
+            <td>
+              <span v-if="ing.type === 'organic'" class="flex items-center gap-1 text-sm font-medium">
+                <Check v-if="ing.hasJasLabel" class="text-success" :size="16" />
+                <X v-else class="text-danger" :size="16" />
+                {{ ing.hasJasLabel ? 'JAS繝槭・繧�E�譛�E' : '陦�E�遉ｺ縺�E�縺・' }}
+              </span>
+              <span v-else class="text-light text-sm">-</span>
+            </td>
+            <td style="text-align: center;">
+              <div class="action-buttons-cell">
+                <button class="btn-icon-only text-primary" title="邱�E�髮・" @click="openEditModal(ing)">
+                  <Edit3 :size="16" />
+                </button>
+                <button class="btn-icon-only text-danger" title="蜑企勁" @click="deleteIngredient(ing.id, ing.name)">
+                  <Trash2 :size="16" />
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 譁E��隕上�E邱�E�髮・Δ繝ｼ繝繝ｫ (UX Safety) -->
+    <teleport to="body">
+      <div v-if="showModal" class="modal-overlay">
+        <div class="modal-card animate-fade-in">
+          <div class="modal-header">
+            <h3>{{ isEditing ? '蜴滓攝譁呎ュ蝣' : '譁E' }}</h3>
+            <button class="btn-close" @click="showModal = false">
+              <X :size="20" />
+            </button>
+          </div>
+          <div class="modal-body">
+            <div v-if="errorMessage" class="alert alert-danger py-2 px-3 mb-4 text-sm">
+              <AlertTriangle :size="16" /> {{ errorMessage }}
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">蜴滓攝譁吝錁E<span class="required">*</span></label>
+              <input 
+                v-model="form.name" 
+                type="text" 
+                class="input-organic" 
+                placeholder="萓�E" 譛�E岼JAS繧�E�繝懊き繝�E
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">莉募・蛹�E�蛻・<span class="required">*</span></label>
+              <select v-model="form.type" class="input-organic select-organic">
+                <option value="organic">譛画�E�櫟AS隱榊ｮ壼刀 (譛画�E�溷牡蜷医・蜉邂怜ｯ�E�雎｡)</option>
+                <option value="general">荳闊ｬ鬟溷刀 (譛画�E�溷牡蜷医・蜉邂怜ｯ�E�雎｡螟�E荳闊ｬ蜩∝�E豈�E</option>
+                <option value="salt_water">豌ｴ繝ｻ鬟溷�E��E� (譛画�E�溷牡蜷郁E��育�E�励°繧牙ｮ悟�E縺�E�髯�E�螟�E</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">莉募・蜈亥錁E<span class="required">*</span></label>
+              <input 
+                v-model="form.supplier" 
+                type="text" 
+                class="input-organic" 
+                placeholder="萓E 繧E繝ｪ繝ｼ繝ｳ繝吶ず繧E繝悶Ν譬E蠑丈ｼ夂､E"
+              />
+            </div>
+
+            <!-- 譛画�E�櫟AS蜩√�E縺�E�縺�E�陦�E�遉ｺ縺吶�E�隧�E�邏ｰ險�E�螳・(UX Safety: 迥�E�豕�E↓蠢懊§縺溘♀繧めE��縺�E�縺誘I) -->
+            <fieldset class="form-fieldset" v-if="form.type === 'organic'">
+              <legend class="fieldset-title">譛画�E�櫟AS驕ｩ蜷郁E��∽�E��E�縺�E�險�E�螳・</legend>
+              
+              <div class="form-checkbox-group mb-3">
+                <label class="checkbox-label">
+                  <input v-model="form.hasCertificate" type="checkbox" />
+                  <span>譛画�E�櫟AS隱榊ｮ夊ｨ�E�譏取嶌繧貞叙蠕励・菫晉ｮ�E�縺励※縺・�E�E</span>
+                </label>
+                <p class="checkbox-help">窶�E�蟷�E�谺�E�蟁E��譟ｻ譎ゅ↓縲∽�E�募�E蜈医°繧牙叙繧雁E��・○縺滓怏蜉�E�縺�E�險�E�譏取嶌縺�E�蜴滓悽・亥・縺暦�E�峨′蠢・�E�√〒縺吶・<</p>
+              </div>
+
+              <div v-if="form.hasCertificate" class="form-group mb-3">
+                <label class="form-label">險�E�譏取嶌縺�E�譛牙柑譛滁E��</label>
+                <input 
+                  v-model="form.certificateExpiry" 
+                  type="date" 
+                  class="input-organic"
+                />
+              </div>
+
+              <div class="form-checkbox-group">
+                <label class="checkbox-label">
+                  <input v-model="form.hasJasLabel" type="checkbox" />
+                  <span>蜿怜�E譎ゅ↓闕�E�蟋ｿ縺�E�縲梧怏讖櫟AS繝槭・繧�E�縲阪・雋ｼ莉倥′縺めE��E</span>
+                </label>
+                <p class="checkbox-help">窶�E�JAS繝槭・繧�E�縺後�E縺・�E��E�逕｣迚ｩ繧偵€梧怏讖溘€阪→縺励※菴�E�逕ｨ縺吶�E�縺薙�E縺�E�縺�E�縺阪∪縺帙ｓ縲・<</p>
+              </div>
+
+              <!-- 新規：�Eスター写真のアチE�Eロード枠 -->
+              <div class="form-group mt-3" style="background-color: rgba(60, 91, 74, 0.03); border: 1px solid rgba(60, 91, 74, 0.1); border-radius: 6px; padding: 0.75rem;">
+                <label class="form-label" style="font-weight: bold; color: var(--primary); font-size: 0.85rem;">
+                  📸 JASマ�Eク・証明書写真の保管�E��Eスター用�E�E                </label>
+                <p class="text-xs text-sub mb-2">※ここに登録しておくと、日、E�E受�E記録での写真添付が不要になります、E<</p>
+                <div class="flex items-center gap-3">
+                  <input type="file" accept="image/*,application/pdf" @change="handleJasCertUpload" style="display: none;" id="master-jas-upload" />
+                  <label for="master-jas-upload" class="btn btn-outline btn-sm flex items-center gap-1 cursor-pointer" style="font-size: 0.8rem; margin: 0; padding: 0.25rem 0.6rem;">
+                    ファイルを選択してアチE�EローチE..
+                  </label>
+                  <span v-if="form.jasCertUrl" class="text-xs text-success font-bold">✁E添付済み</span>
+                </div>
+                <!-- プレビュー表示 -->
+                <div v-if="form.jasCertUrl" class="mt-3 text-center" style="position: relative; display: inline-block; width: 100%;">
+                  <img v-if="form.jasCertUrl.startsWith('data:image')" :src="form.jasCertUrl" alt="JASマ�Eク現物プレビュー" style="max-height: 120px; border-radius: 4px; box-shadow: var(--shadow-sm); border: 1px solid #ddd;" />
+                  <div v-else style="padding: 1rem; border: 1px solid #ddd; border-radius: 4px; background: #fff; text-align: center;">📄 PDFファイルが添付されてぁE��ぁE</div>
+                  <button type="button" @click="form.jasCertUrl = ''" style="position: absolute; top: -5px; right: 50%; transform: translateX(65px); background-color: rgba(0,0,0,0.6); color: white; border: none; border-radius: 50%; width: 22px; height: 22px; font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; justify-content: center;">ÁE</button>
+                </div>
+              </div>
+            </fieldset>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-outline" @click="showModal = false">繧�E�繝｣繝ｳ繧�E�繝ｫ</button>
+            <button class="btn btn-primary" @click="saveIngredient">
+            <h3>{{ isEditing ? '蜴滓攝譁呎ュ蝣' : '譁E' }}</h3>
+            </button>
+          </div>
+        </div>
+      </div>
+    </teleport>
+
+    <!-- Ri-Ry-Link 隱崎ｨ�E�繝｢繝ｼ繝繝ｫ (螳溘ョ繝ｼ繧�E�繧堤�E��E�螳溘�E繧�E�繝ｳ繝昴・繝医☁E��九◆繧√�E螳牙�E繝ｭ繧�E�繧�E�繝ｳ) -->
+    <teleport to="body">
+      <div v-if="showAuthModal" class="modal-overlay" style="z-index: 1100;">
+        <div class="modal-card animate-fade-in" style="max-width: 450px;">
+          <div class="modal-header" style="border-bottom: 1px solid var(--border); padding: 1.25rem 1.5rem;">
+            <h3 style="color: var(--primary); margin: 0; font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem;">
+              <RefreshCw :size="18" /> Ri-Ry-Link 隱崎ｨ�E�繧�E�繧�E�繝ｳ繧�E�繝ｳ
+            </h3>
+            <button class="btn-close" @click="showAuthModal = false; isSyncing = false;">
+              <X :size="20" />
+            </button>
+          </div>
+          <div class="modal-body" style="padding: 1.5rem;">
+<p class="text-sub text-sm mb-4" style="line-height: 1.5; color: var(--text-light);">
+              螳滁E��縺�E�莉募・繝ｻ邏榊�E繝�E・繧�E�繧貞次譚�E侭繝槭せ繧�E�繝ｼ縺�E�蜷梧悁E��吶�E�縺溘ａ縲∽�E�募�E邂｡送E�Eす繧�E�繝�EΒ�E・i-Ry-Link・峨〒縺泌茜逕ｨ縺�E�繝ｭ繧�E�繧�E�繝ｳ繧�E�繧�E�繧�E�繝ｳ繝医〒隱崎ｨ�E�繧貞ｮ御�E�・�E�E��帙※縺上□縺輔＞縲・            <</p>
+
+            <div v-if="authError" class="alert alert-danger py-2 px-3 mb-4 text-sm" style="background: rgba(220,38,38,0.05); color: #dc2626; border-left: 3px solid #dc2626; border-radius: var(--radius-sm); display: flex; justify-content: space-between; width: 100%;">
+              <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <AlertTriangle :size="16" /> <span>{{ authError }}</span>
+              </div>
+              <button class="btn-close" style="padding: 0; background: none; border: none; cursor: pointer; color: #dc2626;" @click="authError = ''">
+                <X :size="16" />
+              </button>
+            </div>
+
+            <!-- 繧�E�繧�E�繝�Eけ繧�E�繧�E�繧�E�繝ｳ繝磯∈謚�E(縺翫�E�縺�E�縺�E�縺励・繧�E�繝ｧ繝ｼ繝医き繝�Eヨ讖溯・) -->
+            <div class="mb-4">
+              <label class="form-label" style="font-size: 0.75rem; color: var(--text-light); margin-bottom: 0.375rem; display: block;">繧�E�繧�E�繝�Eけ繧�E�繧�E�繧�E�繝ｳ繝磯∈謚�E</label>
+              <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                <button 
+                  type="button" 
+                  class="btn btn-outline py-1 px-2 text-xs" 
+                  style="padding: 0.25rem 0.5rem; font-size: 0.75rem; border-color: var(--border); color: var(--text-light);" 
+                  @click="selectQuickAccount('tanaka@kakuida.com')"
+                >
+                  tanaka@kakuida.com
+                </button>
+                <button 
+                  type="button" 
+                  class="btn btn-outline py-1 px-2 text-xs" 
+                  style="padding: 0.25rem 0.5rem; font-size: 0.75rem; border-color: var(--border); color: var(--text-light);" 
+                  @click="selectQuickAccount('test@example.com')"
+                >
+                  test@example.com
+                </button>
+              </div>
+            </div>
+
+            <div class="form-group mb-3">
+              <label class="form-label" style="font-size: 0.85rem; font-weight: 500; display: block; margin-bottom: 0.25rem;">繝｡繝ｼ繝ｫ繧�E�繝峨Ξ繧�E�</label>
+              <input 
+                v-model="authForm.email" 
+                type="email" 
+                class="input-organic" 
+                placeholder="example@kakuida.com"
+                style="width: 100%;"
+              />
+            </div>
+
+            <div class="form-group mb-4">
+              <label class="form-label" style="font-size: 0.85rem; font-weight: 500; display: block; margin-bottom: 0.25rem;">繝代せ繝ｯ繝ｼ繝�E</label>
+              <input 
+                v-model="authForm.password" 
+                type="password" 
+                class="input-organic" 
+                placeholder="窶�E�窶�E�窶�E�窶�E�窶�E�窶�E�窶�E�窶�E�"
+                style="width: 100%;"
+                @keyup.enter="submitAuthAndSync"
+              />
+            </div>
+          </div>
+          <div class="modal-footer" style="padding: 1.25rem 1.5rem; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 0.75rem; background: var(--bg-sub);">
+            <button class="btn btn-outline" @click="showAuthModal = false; isSyncing = false;">繧�E�繝｣繝ｳ繧�E�繝ｫ</button>
+            <button 
+              class="btn btn-primary flex items-center gap-1" 
+              style="font-weight: 600;" 
+              @click="submitAuthAndSync" 
+              :disabled="isAuthenticating"
+            >
+              <RefreshCw :size="16" :class="isAuthenticating ? 'animate-spin' : ''" />
+              {{ isAuthenticating ? '繧�E�繧�E�繝ｳ繧�E�繝ｳ & 蜷梧悁E���E�...' : '繧�E�繧�E�繝ｳ繧�E�繝ｳ縺励※蜷梧悁E' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </teleport>
+  </div>
+</template>
+
+<style scoped>
+.view-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.view-header h2 {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+/* 繝輔ぅ繝ｫ繧�E�繝ｼ繝�E・ */
+.filter-bar {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 1rem 1.25rem;
+}
+
+.search-input-wrapper {
+  position: relative;
+  flex-grow: 1;
+  min-width: 250px;
+}
+
+.search-icon {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-light);
+}
+
+.search-input-wrapper .input-organic {
+  padding-left: 2.25rem;
+}
+
+.filter-options {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.filter-label {
+  font-size: 0.875rem;
+  color: var(--text-sub);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.filter-buttons {
+  display: flex;
+  background-color: var(--bg-sub);
+  padding: 0.25rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.filter-btn {
+  font-family: var(--font-sans);
+  font-size: 0.825rem;
+  font-weight: 500;
+  color: var(--text-sub);
+  background: none;
+  border: none;
+  padding: 0.375rem 0.75rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.filter-btn:hover {
+  color: var(--primary);
+}
+
+.filter-btn.active {
+  background-color: var(--bg-card);
+  color: var(--primary);
+  box-shadow: var(--shadow-sm);
+  font-weight: 600;
+}
+
+/* 繝�E・繝悶Ν霑�E�蜉隕∫�E��E� */
+.id-badge {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  background-color: var(--bg-sub);
+  color: var(--text-sub);
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  display: inline-block;
+  margin-top: 0.125rem;
+}
+
+.action-buttons-cell {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.btn-icon-only {
+  background: none;
+  border: none;
+  padding: 0.375rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: var(--transition);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-icon-only:hover {
+  background-color: var(--bg-sub);
+}
+
+.row-expired {
+  background-color: rgba(220, 38, 38, 0.02);
+}
+
+.small-alert {
+  font-size: 0.7rem;
+  font-weight: bold;
+  color: var(--danger);
+  margin-left: 0.25rem;
+}
+.small-alert.warn {
+  color: var(--warning);
+}
+
+/* 繝｢繝ｼ繝繝ｫ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(44, 42, 39, 0.4);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 550px;
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+}
+
+.modal-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+  color: var(--primary);
+}
+
+.btn-close {
+  background: none;
+  border: none;
+  color: var(--text-light);
+  cursor: pointer;
+  transition: var(--transition);
+  padding: 0.25rem;
+  border-radius: 4px;
+  display: flex;
+}
+
+.btn-close:hover {
+  color: var(--text-main);
+  background-color: var(--bg-sub);
+}
+
+.modal-body {
+  padding: 1.5rem;
+  overflow-y: auto;
+}
+
+.modal-footer {
+  padding: 1.25rem 1.5rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.required {
+  color: var(--danger);
+  margin-left: 0.125rem;
+}
+
+.form-fieldset {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1rem;
+  margin-top: 1.25rem;
+  background-color: var(--bg-main);
+}
+
+.fieldset-title {
+  font-size: 0.825rem;
+  font-weight: 600;
+  color: var(--primary);
+  padding: 0 0.5rem;
+}
+
+.form-checkbox-group {
+  margin-bottom: 1rem;
+}
+
+.form-checkbox-group:last-child {
+  margin-bottom: 0;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-main);
+}
+
+.checkbox-label input {
+  margin-top: 0.25rem;
+  cursor: pointer;
+}
+
+.checkbox-help {
+  font-size: 0.75rem;
+  color: var(--text-sub);
+  margin: 0.125rem 0 0 1.25rem;
+}
+
+.py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+.px-3 { padding-left: 0.75rem; padding-right: 0.75rem; }
+.text-sm { font-size: 0.875rem; }
+.py-8 { padding-top: 2rem; padding-bottom: 2rem; }
+.text-center { text-align: center; }
+</style>
+
+
+

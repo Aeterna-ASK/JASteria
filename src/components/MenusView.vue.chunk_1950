@@ -1,0 +1,127 @@
+Created At: 2026-05-27T15:35:00Z
+Completed At: 2026-05-27T15:35:00Z
+Total Bytes: 132316
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+border: 1px solid #e2e8f0;
+border-radius: 8px;
+padding: 1.25rem;
+}
+
+.designer-recipe-rows {
+flex: 1;
+overflow-y: auto;
+max-height: 520px;
+padding-right: 0.5rem;
+}
+
+.designer-recipe-row {
+transition: all 0.2s ease;
+}
+
+.designer-recipe-row:hover {
+border-color: #0f766e !important;
+box-shadow: 0 4px 12px rgba(15, 118, 110, 0.04);
+}
+
+@media print {
+body * {
+visibility: hidden;
+}
+
+.print-area, .print-area * {
+visibility: visible;
+}
+
+.print-area {
+position: absolute;
+left: 0;
+top: 0;
+width: 100%;
+padding: 0;
+margin: 0;
+}
+
+.no-print {
+display: none !important;
+}
+
+.excel-spec-sheet-v2 {
+border: 2px solid #000000 !important;
+box-shadow: none !important;
+padding: 5mm !important; /* パディングを縮小して高さを確保 */
+width: 100% !important;
+max-width: 100% !important;
+margin: 0 !important;
+box-sizing: border-box !important;
+page-break-inside: avoid;
+-webkit-print-color-adjust: exact !important;
+print-color-adjust: exact !important;
+}
+
+.excel-spec-sheet-v2 th {
+background-color: #fffcf0 !important;
+-
+<truncated 1924 bytes>
+}
+
+.twin-recipe-tables-container td, 
+.twin-recipe-tables-container th {
+padding: 0.1rem 0.3rem !important; /* レシピセルの高さを詰める */
+height: 18px !important;
+}
+
+.summary-aggregate-row {
+margin-top: 0.25rem !important;
+}
+
+.bottom-blocks-container {
+margin-top: 0.25rem !important;
+gap: 0.5rem !important;
+}
+
+.instructions-rows-table td, 
+.instructions-rows-table th {
+padding: 0.15rem 0.4rem !important; /* 作り方のセルの高さを詰める */
+height: 26px !important;
+}
+
+.photo-body {
+height: 110px !important; /* 写真枠の高さをコンパクトにして下部のはみ出しを完全防止 */
+}
+
+.legend-mini-table tr {
+height: 14px !important; /* ミニ凡例のセルの高さを詰める */
+}
+
+.footer-compliance-box {
+margin-top: 0.25rem !important;
+}
+
+.compliance-table tr {
+height: auto !important;
+}
+
+.compliance-table th, .compliance-table td {
+padding: 0.15rem 0.4rem !important; /* 適合表示テーブルのパディングをタイトに */
+}
+}
+
+.designer-weight-input:focus {
+outline: none !important;
+border: none !important;
+}
+
+.btn-delete-designer {
+transition: all 0.2s;
+}
+
+.btn-delete-designer:hover {
+background: #fee2e2 !important;
+border-color: #fca5a5 !important;
+color: #ef4444 !important;
+transform: scale(1.05);
+}
+
+/* 右側：シミュレーターカード内のプログレスカラー */
+.designer-progress-fill.valid {
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.

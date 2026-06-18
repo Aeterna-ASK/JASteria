@@ -1,0 +1,942 @@
+import { reactive, computed, readonly } from 'vue';
+
+const STORE_KEY = 'jas_restaurant_store_v1';
+
+/**
+ * ============================================================================
+ * JASAGRI 有機JASレストラン管理システム - 共通データフロー (ポータブル・ストア)
+ * Version: v1.1.0
+ * 
+ * [設計方針]
+ * 1. Infrastructure Agnostic: Vue3 標準の reactive/computed のみで構成。
+ *    外部ライブラリへの依存がなく、Firebase、Supabase 等への連携・移行が容易。
+ * 2. Self-Documenting: 各データ構造、計算式に詳細なコメントを添え、堅牢に設計。
+ * 3. UX Safety: 起動直後からリッチな検証が可能な「リアルシードデータ」を自動注入。
+ */
+
+// --- 初期シードデータ (JAS 0004 料理スペックに完全適合したリアルな鹿児島・霧島ストーリー) ---
+const seedIngredients = [
+  {
+    id: 'ing-001',
+    name: '有機JAS完熟トマト',
+    supplier: '霧島オーガニック農園',
+    type: 'organic', // organic (有機JAS), general (一般), salt_water (水・食塩)
+    hasCertificate: true,
+    certificateExpiry: '2027-03-31',
+    hasJasLabel: true,
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'ing-002',
+    name: '有機エキストラバージンオリーブオイル',
+    supplier: '地中海オーガニック商事',
+    type: 'organic',
+    hasCertificate: true,
+    certificateExpiry: '2026-12-31',
+    hasJasLabel: true,
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'ing-003',
+    name: 'イタリア産有機セモリナスパゲッティ',
+    supplier: 'オーガニック・トレイディング',
+    type: 'organic',
+    hasCertificate: true,
+    certificateExpiry: '2027-05-15',
+    hasJasLabel: true,
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'ing-004',
+    name: '国産こだわり鶏もも肉',
+    supplier: '薩摩地鶏クオリティ',
+    type: 'general', // 一般原材料
+    hasCertificate: false,
+    certificateExpiry: '',
+    hasJasLabel: false,
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'ing-005',
+    name: '有機こだわりベビーリーフ',
+    supplier: 'あおぞら有機ファーム',
+    type: 'organic',
+    hasCertificate: true,
+    certificateExpiry: '2026-09-30',
+    hasJasLabel: true,
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'ing-006',
+    name: 'シチリア産天然岩塩',
+    supplier: 'マリーナ・ソルト',
+    type: 'salt_water', // 水・食塩 (JAS割合計算から除外される)
+    hasCertificate: false,
+    certificateExpiry: '',
+    hasJasLabel: false,
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'ing-007',
+    name: '国産有機丸大豆醤油',
+    supplier: 'ヤマキ有機醸造',
+    type: 'organic',
+    hasCertificate: true,
+    certificateExpiry: '2027-01-10',
+    hasJasLabel: true,
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'ing-008',
+    name: '有機JAS人参',
+    supplier: '霧島オーガニック農園',
+    type: 'organic',
+    hasCertificate: true,
+    certificateExpiry: '2027-04-30',
+    hasJasLabel: true,
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'ing-009',
+    name: '有機JASコリンキー',
+    supplier: '霧島オーガニック農園',
+    type: 'organic',
+    hasCertificate: true,
+    certificateExpiry: '2026-11-30',
+    hasJasLabel: true,
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'ing-010',
+    name: '有機JASズッキーニ',
+    supplier: '霧島オーガニック農園',
+    type: 'organic',
+    hasCertificate: true,
+    certificateExpiry: '2026-10-31',
+    hasJasLabel: true,
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'ing-011',
+    name: '有機JASビーツ',
+    supplier: '霧島オーガニック農園',
+    type: 'organic',
+    hasCertificate: true,
+    certificateExpiry: '2026-12-15',
+    hasJasLabel: true,
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'ing-012',
+    name: '有機JASカラシナ',
+    supplier: 'あおぞら有機ファーム',
+    type: 'organic',
+    hasCertificate: true,
+    certificateExpiry: '2026-09-30',
+    hasJasLabel: true,
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'ing-013',
+    name: '有機JAS水菜',
+    supplier: 'あおぞら有機ファーム',
+    type: 'organic',
+    hasCertificate: true,
+    certificateExpiry: '2026-08-31',
+    hasJasLabel: true,
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'ing-014',
+    name: '有機JAS黒酢',
+    supplier: '霧島醸造',
+    type: 'organic',
+    hasCertificate: true,
+    certificateExpiry: '2027-04-10',
+    hasJasLabel: true,
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'ing-015',
+    name: 'グラニュー糖',
+    supplier: '一般調味料卸',
+    type: 'general',
+    hasCertificate: false,
+    certificateExpiry: '',
+    hasJasLabel: false,
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'ing-016',
+    name: '一般醤油',
+    supplier: '薩摩醸造',
+    type: 'general',
+    hasCertificate: false,
+    certificateExpiry: '',
+    hasJasLabel: false,
+    updatedAt: new Date().toISOString()
+  }
+];
+
+const seedMenus = [
+  {
+    id: 'menu-001',
+    name: '有機トマトと完熟オリーブのアラビアータ',
+    price: 1480,
+    isOrganicClaim: true, // 「有機メニュー」として提供・表示するかどうか
+    recipe: [
+      { ingredientId: 'ing-001', amount: 120 }, // 有機トマト 120g
+      { ingredientId: 'ing-002', amount: 15 },  // 有機オリーブオイル 15g
+      { ingredientId: 'ing-003', amount: 80 },  // 有機スパゲッティ 80g
+      { ingredientId: 'ing-006', amount: 3 }    // 天然岩塩 3g (計算除外)
+    ],
+    description: '霧島オーガニック農園の完熟トマトをふんだんに使用した、ピリッと辛い定番パスタ。100%有機原材料(水・塩除く)で作られています。',
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'menu-002',
+    name: '有機野菜サラダ（JAS配合：通年・メニュー掲載）',
+    price: 1180,
+    isOrganicClaim: true,
+    recipe: [
+      { ingredientId: 'ing-008', amount: 30 },  // 有機人参 30g (有機)
+      { ingredientId: 'ing-009', amount: 15 },  // 有機コリンキー 15g (有機)
+      { ingredientId: 'ing-010', amount: 15 },  // 有機ズッキーニ 15g (有機)
+      { ingredientId: 'ing-011', amount: 10 },  // 有機ビーツ 10g (有機)
+      { ingredientId: 'ing-012', amount: 10 },  // 有機カラシナ 10g (有機)
+      { ingredientId: 'ing-013', amount: 10 },  // 有機水菜 10g (有機)
+      { ingredientId: 'ing-002', amount: 5 },   // 有機オリーブオイル 5g (有機)
+      { ingredientId: 'ing-014', amount: 5 },   // 有機黒酢 5g (有機)
+      { ingredientId: 'ing-015', amount: 1.5 }, // グラニュー糖 1.5g (一般)
+      { ingredientId: 'ing-016', amount: 1.5 }, // 一般醤油 1.5g (一般)
+      { ingredientId: 'ing-006', amount: 1.0 }  // 天然岩塩 1.0g (水・食塩 - 計算除外)
+    ],
+    description: '前年の有機JAS料理スペック（Gドライブ：R7 スペックサラダ.xlsx）に完全準拠。霧島産の有機人参、コリンキー、ビーツ、ズッキーニをふんだんに盛り込み、ドレッシングに非有機の砂糖と醤油を僅かに配合。水塩を除く有機比率97.08%で、JAS 95%基準を美しくクリアした完全監査適合サラダです。',
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'menu-003',
+    name: '薩摩地鶏のソテー 〜有機完熟トマトソース仕立て〜',
+    price: 1850,
+    isOrganicClaim: false, // 有機割合が低いため、料理全体を「有機」とは謳えない (一部表記のみ)
+    recipe: [
+      { ingredientId: 'ing-004', amount: 180 }, // 一般鶏もも肉 180g (一般)
+      { ingredientId: 'ing-001', amount: 80 },  // 有機トマト 80g (有機)
+      { ingredientId: 'ing-002', amount: 10 },  // 有機オリーブオイル 10g (有機)
+      { ingredientId: 'ing-006', amount: 4 }    // 天然岩塩 4g (計算除外)
+    ],
+    description: 'ジューシーに焼き上げた地鶏ソテーに、豊かな風味 of 有機トマトソースを合わせました。※鶏肉は一般、ソースに有機食材を使用。',
+    updatedAt: new Date().toISOString()
+  }
+];
+
+const seedReceipts = [
+  {
+    id: 'rec-001',
+    date: '2026-05-05',
+    ingredientId: 'ing-001',
+    quantity: 15.0, // kg
+    lotNumber: 'KIRI-260505A',
+    checkedBy: '角田 健一',
+    isSeparated: true,          // 一般品と混ざらないよう分別保管されているか
+    hasJasLabelVerified: true,  // 受入時に有機JASマークが貼付されていることを確認したか
+    isClean: true,              // 汚損、異物混入がないか
+    status: 'good',             // good, warning, bad
+    notes: '鮮度良好。格付マーク確認済み。冷蔵保管庫Aに分別収容。'
+  },
+  {
+    id: 'rec-002',
+    date: '2026-05-06',
+    ingredientId: 'ing-005',
+    quantity: 3.5, // kg
+    lotNumber: 'AO-260506',
+    checkedBy: '角田 健一',
+    isSeparated: true,
+    hasJasLabelVerified: true,
+    isClean: true,
+    status: 'good',
+    notes: 'ベビーリーフ受入。コンテナ洗浄確認済み。冷蔵保管庫B。'
+  },
+  {
+    id: 'rec-003',
+    date: '2026-05-07',
+    ingredientId: 'ing-004',
+    quantity: 10.0, // kg
+    lotNumber: '鶏肉-0507',
+    checkedBy: '鈴木 美咲',
+    isSeparated: true,          // 一般品だが保管場所は混同防止のため指定
+    hasJasLabelVerified: false, // 一般品のため無し
+    isClean: true,
+    status: 'good',
+    notes: '肉類専用冷蔵庫に格納。有機食材の保管エリアとは明確にパーティションで隔離。'
+  },
+  {
+    id: 'rec-004',
+    date: '2026-05-04',
+    ingredientId: 'ing-008', // 有機JAS人参
+    quantity: 20.0, // kg
+    lotNumber: 'NIN-260504',
+    checkedBy: '角田 健一',
+    isSeparated: true,
+    hasJasLabelVerified: true,
+    isClean: true,
+    status: 'good',
+    notes: '2025年指摘改善対象：人参現物のJASマーク貼付をスマホ撮影して保存。冷蔵保管庫Cに格納。'
+  },
+  {
+    id: 'rec-005',
+    date: '2026-05-05',
+    ingredientId: 'ing-009', // コリンキー
+    quantity: 10.0, // kg
+    lotNumber: 'KOL-260505',
+    checkedBy: '角田 健一',
+    isSeparated: true,
+    hasJasLabelVerified: true,
+    isClean: true,
+    status: 'good',
+    notes: '有機コリンキー受入。汚れなし、分別保管確認。'
+  }
+];
+
+const seedCookingLogs = [
+  {
+    id: 'cook-001',
+    date: '2026-05-07',
+    menuId: 'menu-001',
+    quantity: 12, // 提供食数
+    checkedBy: '角田 健一',
+    isUtensilsClean: true,      // 調理器具・まな板の有機専用（または都度洗浄）が確認されたか
+    isIngredientVerified: true, // レシピ通りの有機原材料ロットが正しく使用されたか
+    lotDetails: 'トマト: KIRI-260505A',
+    notes: 'ランチピーク時の提供。有機専用調理器具を使用して、一般調理との混同を完全防止。'
+  },
+  {
+    id: 'cook-002',
+    date: '2026-05-07',
+    menuId: 'menu-002', // 有機野菜サラダ（JAS配合：通年・メニュー掲載）
+    quantity: 15, // 提供食数 15食
+    checkedBy: '角田 健一',
+    isUtensilsClean: true,
+    isIngredientVerified: true,
+    lotDetails: '人参: NIN-260504, コリンキー: KOL-260505',
+    notes: '2025年人参の指摘対策：受入ロットNIN-260504から製造。サラダ用ボイル人参用ボールは一般品と完全分離、都度アルコール消毒を徹底。'
+  }
+];
+
+// --- 新規：店舗清掃・掃除点検記録（JASホールの清掃指摘の改善） ---
+const seedCleaningLogs = [
+  {
+    id: 'clean-001',
+    date: '2026-05-07',
+    area: 'ホール', // ホール, 厨房, 出荷場, 食材保管庫
+    checkedBy: '鈴木 美咲',
+    isFloorCleaned: true,      // 床・壁・テーブルの清掃と消毒
+    isTrashRemoved: true,      // ゴミ・一般食材ゴミの完全廃棄
+    isContactPrevented: true,  // 一般顧客エリアと有機提供エリアの隔離・清潔維持
+    status: 'good',
+    notes: 'ホールの日常清掃およびテーブルのアルコール消毒点検完了。お客様への誤認表示（ビール等）のメニュー案内板が正しく掲示されていることを合わせて目視点検。'
+  },
+  {
+    id: 'clean-002',
+    date: '2026-05-08',
+    area: '食材保管庫',
+    checkedBy: '角田 健一',
+    isFloorCleaned: true,
+    isTrashRemoved: true,
+    isContactPrevented: true, // 保管コンテナの洗浄と区分け
+    status: 'good',
+    notes: '有機保管庫と一般保管庫の間に防塵パーティションが設置されており、害虫・ネズミの形跡がないことを確認。分別表示が綺麗に維持されています。'
+  }
+];
+
+const defaultRestaurantInfo = {
+  name: 'オーガニックレストラン アグリ角田 (AGRI KAKUIDA)',
+  manager: '角田 健一', // 生産行程管理責任者
+  grader: '鈴木 美咲',  // 格付担当者
+  certNumber: 'JAS-REST-2026-0042', // 有機JAS認定番号
+  certDate: '2025-04-10',
+  address: '鹿児島県霧島市国分下井290-1'
+};
+
+
+// ============================================================================
+// ストア状態 (State)
+// ============================================================================
+const state = reactive({
+  activeTab: 'dashboard',
+  restaurantInfo: { ...defaultRestaurantInfo },
+  ingredients: [],
+  menus: [],
+  receipts: [],
+  cookingLogs: [],
+  cleaningLogs: [], // 新規追加
+  initialized: false
+});
+
+
+// ============================================================================
+// データ永続化 (Persistence) & 初期化
+// ============================================================================
+function loadStore() {
+  try {
+    const rawData = localStorage.getItem(STORE_KEY);
+    if (rawData) {
+      const parsed = JSON.parse(rawData);
+      state.activeTab = parsed.activeTab || 'dashboard';
+      state.restaurantInfo = parsed.restaurantInfo || { ...defaultRestaurantInfo };
+      state.ingredients = parsed.ingredients || [];
+      state.menus = parsed.menus || [];
+      state.receipts = parsed.receipts || [];
+      state.cookingLogs = parsed.cookingLogs || [];
+      state.cleaningLogs = parsed.cleaningLogs || [...seedCleaningLogs];
+    } else {
+      // シードデータをロード
+      state.activeTab = 'dashboard';
+      state.restaurantInfo = { ...defaultRestaurantInfo };
+      state.ingredients = [...seedIngredients];
+      state.menus = [...seedMenus];
+      state.receipts = [...seedReceipts];
+      state.cookingLogs = [...seedCookingLogs];
+      state.cleaningLogs = [...seedCleaningLogs];
+      saveStore();
+    }
+    state.initialized = true;
+  } catch (error) {
+    console.error('Failed to load storage for JAS Restaurant:', error);
+    // フォールバック
+    state.ingredients = [...seedIngredients];
+    state.menus = [...seedMenus];
+    state.cleaningLogs = [...seedCleaningLogs];
+  }
+}
+
+function saveStore() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      activeTab: state.activeTab,
+      restaurantInfo: state.restaurantInfo,
+      ingredients: state.ingredients,
+      menus: state.menus,
+      receipts: state.receipts,
+      cookingLogs: state.cookingLogs,
+      cleaningLogs: state.cleaningLogs
+    }));
+  } catch (error) {
+    console.error('Failed to save storage for JAS Restaurant:', error);
+  }
+}
+
+// 即時初期化
+loadStore();
+
+
+// ============================================================================
+// 演算状態 (Getters / Computed Properties)
+// ============================================================================
+
+/**
+ * 原材料IDマップ (高速ルックアップ用)
+ */
+const ingredientsMap = computed(() => {
+  const map = {};
+  state.ingredients.forEach(ing => {
+    map[ing.id] = ing;
+  });
+  return map;
+});
+
+/**
+ * 有機割合計算ヘルパー
+ * 有機JAS基準: 水と食塩を除く原材料の重量に占める、有機農産物・有機加工食品の割合 (%)
+ * 
+ * @param {Array} recipeItems - [{ ingredientId, amount }]
+ * @returns {Object} { organicWeight, totalWeight, ratio, isValidOrganicMenu }
+ */
+function calculateOrganicRatio(recipeItems) {
+  if (!recipeItems || recipeItems.length === 0) {
+    return { organicWeight: 0, totalWeight: 0, ratio: 0, isValidOrganicMenu: false, auditWarnings: [] };
+  }
+
+  let totalWeight = 0;      // 水・食塩を除いた全重量
+  let organicWeight = 0;    // 有機原材料の総重量
+  const auditWarnings = []; // 監査への適合・経過措置に関する警告
+
+  recipeItems.forEach(item => {
+    const ing = ingredientsMap.value[item.ingredientId];
+    if (!ing) return;
+
+    const amount = Number(item.amount) || 0;
+
+    // 料理酒に関する平成7年10月1日義務化警告（2024年監査指摘の対応）
+    if (ing.name.includes('酒') && ing.type === 'general') {
+      auditWarnings.push({
+        id: 'warning-alcohol-jas',
+        title: '料理酒JAS適合アラート',
+        message: '令和7年10月1日以降、有機料理と謳うメニュー内に配合する料理酒には「格付JASマーク（有機）」が完全に必須化されます。現行 of 一般料理酒から、有機JAS認定酒への切り替えをご準備ください。'
+      });
+    }
+
+    if (ing.type === 'salt_water') {
+      // 水・食塩は分母・分子ともに計算から除外
+      return;
+    }
+
+    totalWeight += amount;
+
+    if (ing.type === 'organic') {
+      organicWeight += amount;
+    }
+  });
+
+  const ratio = totalWeight > 0 ? (organicWeight / totalWeight) * 100 : 0;
+  // 小数第2位を四捨五入して第1位まで表示
+  const roundedRatio = Math.round(ratio * 10) / 10;
+  
+  // 有機JASレストラン基準は原則95%以上
+  const isValidOrganicMenu = roundedRatio >= 95.0;
+
+  return {
+    organicWeight,
+    totalWeight,
+    ratio: roundedRatio,
+    isValidOrganicMenu,
+    auditWarnings
+  };
+}
+
+/**
+ * レシピと有機割合をフルデコードしたメニューリスト
+ */
+const decodedMenus = computed(() => {
+  return state.menus.map(menu => {
+    const calc = calculateOrganicRatio(menu.recipe);
+    
+    // 詳細なレシピアイテム情報をバインド
+    const fullRecipe = menu.recipe.map(item => {
+      const ing = ingredientsMap.value[item.ingredientId];
+      return {
+        ...item,
+        name: ing ? ing.name : '不明な原材料',
+        type: ing ? ing.type : 'general',
+        supplier: ing ? ing.supplier : ''
+      };
+    });
+
+    return {
+      ...menu,
+      recipeDetails: fullRecipe,
+      organicRatio: calc.ratio,
+      totalWeight: calc.totalWeight,
+      organicWeight: calc.organicWeight,
+      isValidOrganic: calc.isValidOrganicMenu,
+      auditWarnings: calc.auditWarnings, // アラート
+      // 適合しているか、かつ「有機」をメニュー名等に表示している場合の整合性警告
+      hasDiscrepancy: menu.isOrganicClaim && !calc.isValidOrganicMenu
+    };
+  });
+});
+
+/**
+ * 直近のサマリーデータ (ダッシュボード用)
+ */
+const dashboardStats = computed(() => {
+  const totalIngredients = state.ingredients.length;
+  const organicIngredients = state.ingredients.filter(i => i.type === 'organic').length;
+  
+  const totalMenus = state.menus.length;
+  // デコードしたメニューから有機適合メニューをカウント
+  const compliantMenus = decodedMenus.value.filter(m => m.isValidOrganic).length;
+  const activeOrganicClaims = state.menus.filter(m => m.isOrganicClaim).length;
+
+  // 警告数（有機を謳っているのに適合していないメニュー数）
+  const discrepancyCount = decodedMenus.value.filter(m => m.hasDiscrepancy).length;
+
+  return {
+    totalIngredients,
+    organicIngredients,
+    organicIngRatio: totalIngredients > 0 ? Math.round((organicIngredients / totalIngredients) * 100) : 0,
+    totalMenus,
+    compliantMenus,
+    activeOrganicClaims,
+    discrepancyCount
+  };
+});
+
+/**
+ * 仕入・受入記録のデコード（原材料名、証明書有無、JAS格付の補完）
+ */
+const decodedReceipts = computed(() => {
+  return state.receipts.map(rec => {
+    const ing = ingredientsMap.value[rec.ingredientId];
+    return {
+      ...rec,
+      ingredientName: ing ? ing.name : '不明な原材料',
+      supplier: ing ? ing.supplier : '',
+      hasCertificate: ing ? ing.hasCertificate : false,
+      certificateExpiry: ing ? ing.certificateExpiry : '',
+      // 受入での確認不足、または期限切れに対する警告
+      hasWarning: !rec.isSeparated || !rec.hasJasLabelVerified || !rec.isClean || rec.status !== 'good'
+    };
+  }).sort((a, b) => b.date.localeCompare(a.date));
+});
+
+/**
+ * 調理ログのデコード
+ */
+const decodedCookingLogs = computed(() => {
+  return state.cookingLogs.map(log => {
+    const menu = state.menus.find(m => m.id === log.menuId);
+    return {
+      ...log,
+      menuName: menu ? menu.name : '不明なメニュー',
+      isOrganicClaim: menu ? menu.isOrganicClaim : false,
+      hasWarning: !log.isUtensilsClean || !log.isIngredientVerified
+    };
+  }).sort((a, b) => b.date.localeCompare(a.date));
+});
+
+/**
+ * 清掃ログのデコード (日付順ソートのみ)
+ */
+const decodedCleaningLogs = computed(() => {
+  return [...state.cleaningLogs].sort((a, b) => b.date.localeCompare(a.date));
+});
+
+/**
+ * 有機JAS 3点リンク（仕入受入 - 調理提供 - 売上・生産管理）のトレーサビリティチェーン
+ * レコードごとに、調理ログで使用したロット番号を逆引きし、受入側の監査エビデンス（JASマーク写真、分別保管状態）を結合
+ */
+const traceabilityChain = computed(() => {
+  return state.cookingLogs.map(log => {
+    const menu = state.menus.find(m => m.id === log.menuId);
+    if (!menu) return null;
+
+    // レシピに含まれる有機原材料ごとに、調理ログの lotDetails または receipts の最新ロットを突合
+    const traces = menu.recipe.map(item => {
+      const ing = ingredientsMap.value[item.ingredientId];
+      if (!ing || ing.type !== 'organic') return null;
+
+      // 調理ログの lotDetails から、この原材料のロット番号を抽出する
+      // 例: "トマト: KIRI-260505A, オリーブオイル: OIL-0505"
+      let matchedLot = 'ロット未指定';
+      const detailParts = log.lotDetails.split(',');
+      for (let part of detailParts) {
+        if (part.includes(ing.name.replace('有機JAS', '').trim()) || part.includes(ing.name)) {
+          const colonIdx = part.indexOf(':');
+          if (colonIdx !== -1) {
+            matchedLot = part.substring(colonIdx + 1).trim();
+          } else {
+            matchedLot = part.trim();
+          }
+          break;
+        }
+      }
+
+      // 該当ロットの受入記録を検索
+      const matchedReceipt = state.receipts.find(r => 
+        r.ingredientId === item.ingredientId && 
+        (r.lotNumber === matchedLot || matchedLot.includes(r.lotNumber))
+      );
+
+      return {
+        ingredientId: item.ingredientId,
+        ingredientName: ing.name,
+        supplier: ing.supplier,
+        lotNumber: matchedReceipt ? matchedReceipt.lotNumber : 'ロット不明',
+        receiptDate: matchedReceipt ? matchedReceipt.date : '受入日不明',
+        receiptQuantity: matchedReceipt ? matchedReceipt.quantity : 0,
+        hasJasLabelVerified: matchedReceipt ? matchedReceipt.hasJasLabelVerified : false,
+        isSeparated: matchedReceipt ? matchedReceipt.isSeparated : false,
+        jasPhoto: matchedReceipt ? matchedReceipt.jasPhoto : ''
+      };
+    }).filter(t => t !== null);
+
+    return {
+      cookingLogId: log.id,
+      cookingDate: log.date,
+      menuId: menu.id,
+      menuName: menu.name,
+      quantityCooked: log.quantity, // 調理提供数（売上食数に一致）
+      checkedBy: log.checkedBy,
+      isUtensilsClean: log.isUtensilsClean,
+      isIngredientVerified: log.isIngredientVerified,
+      traces
+    };
+  }).filter(t => t !== null);
+});
+
+
+// ============================================================================
+// Actions (操作メソッド群)
+// ============================================================================
+
+function setTab(tabName) {
+  state.activeTab = tabName;
+  saveStore();
+}
+
+// --- 原材料管理 ---
+function addIngredient(ing) {
+  const newIng = {
+    id: `ing-${Date.now().toString().slice(-3)}-${Math.random().toString(36).slice(2, 5)}`,
+    name: ing.name || '新規原材料',
+    supplier: ing.supplier || '未指定',
+    type: ing.type || 'general',
+    hasCertificate: !!ing.hasCertificate,
+    certificateExpiry: ing.certificateExpiry || '',
+    hasJasLabel: !!ing.hasJasLabel,
+    updatedAt: new Date().toISOString()
+  };
+  state.ingredients.push(newIng);
+  saveStore();
+  return newIng;
+}
+
+function updateIngredient(id, updatedFields) {
+  const idx = state.ingredients.findIndex(i => i.id === id);
+  if (idx !== -1) {
+    state.ingredients[idx] = {
+      ...state.ingredients[idx],
+      ...updatedFields,
+      updatedAt: new Date().toISOString()
+    };
+    saveStore();
+    return true;
+  }
+  return false;
+}
+
+function deleteIngredient(id) {
+  const idx = state.ingredients.findIndex(i => i.id === id);
+  if (idx !== -1) {
+    // 依存関係チェック：この原材料がメニューレシピで使用されているか
+    const isUsed = state.menus.some(menu => 
+      menu.recipe.some(item => item.ingredientId === id)
+    );
+    if (isUsed) {
+      throw new Error('この原材料はレシピに登録されているため削除できません。先にレシピから削除してください。');
+    }
+    state.ingredients.splice(idx, 1);
+    saveStore();
+    return true;
+  }
+  return false;
+}
+
+// --- メニュー（レシピ）管理 ---
+function addMenu(menu) {
+  const newMenu = {
+    id: `menu-${Date.now().toString().slice(-3)}-${Math.random().toString(36).slice(2, 5)}`,
+    name: menu.name || '新規メニュー',
+    price: Number(menu.price) || 0,
+    isOrganicClaim: !!menu.isOrganicClaim,
+    recipe: menu.recipe || [], // [{ ingredientId, amount }]
+    description: menu.description || '',
+    updatedAt: new Date().toISOString()
+  };
+  state.menus.push(newMenu);
+  saveStore();
+  return newMenu;
+}
+
+function updateMenu(id, updatedFields) {
+  const idx = state.menus.findIndex(m => m.id === id);
+  if (idx !== -1) {
+    state.menus[idx] = {
+      ...state.menus[idx],
+      ...updatedFields,
+      updatedAt: new Date().toISOString()
+    };
+    saveStore();
+    return true;
+  }
+  return false;
+}
+
+function deleteMenu(id) {
+  const idx = state.menus.findIndex(m => m.id === id);
+  if (idx !== -1) {
+    state.menus.splice(idx, 1);
+    saveStore();
+    return true;
+  }
+  return false;
+}
+
+// --- 仕入・受入管理 ---
+function addReceipt(rec) {
+  const newRec = {
+    id: `rec-${Date.now().toString().slice(-3)}-${Math.random().toString(36).slice(2, 5)}`,
+    date: rec.date || new Date().toISOString().split('T')[0],
+    ingredientId: rec.ingredientId,
+    quantity: Number(rec.quantity) || 0,
+    lotNumber: rec.lotNumber || 'LOT-AUTO',
+    checkedBy: rec.checkedBy || state.restaurantInfo.manager,
+    isSeparated: !!rec.isSeparated,
+    hasJasLabelVerified: !!rec.hasJasLabelVerified,
+    isClean: !!rec.isClean,
+    status: rec.status || 'good',
+    notes: rec.notes || ''
+  };
+  state.receipts.push(newRec);
+  saveStore();
+  return newRec;
+}
+
+function updateReceipt(id, updatedFields) {
+  const idx = state.receipts.findIndex(r => r.id === id);
+  if (idx !== -1) {
+    state.receipts[idx] = {
+      ...state.receipts[idx],
+      ...updatedFields
+    };
+    saveStore();
+    return true;
+  }
+  return false;
+}
+
+function deleteReceipt(id) {
+  const idx = state.receipts.findIndex(r => r.id === id);
+  if (idx !== -1) {
+    state.receipts.splice(idx, 1);
+    saveStore();
+    return true;
+  }
+  return false;
+}
+
+// --- 調理・提供管理 ---
+function addCookingLog(log) {
+  const newLog = {
+    id: `cook-${Date.now().toString().slice(-3)}-${Math.random().toString(36).slice(2, 5)}`,
+    date: log.date || new Date().toISOString().split('T')[0],
+    menuId: log.menuId,
+    quantity: Number(log.quantity) || 0,
+    checkedBy: log.checkedBy || state.restaurantInfo.manager,
+    isUtensilsClean: !!log.isUtensilsClean,
+    isIngredientVerified: !!log.isIngredientVerified,
+    lotDetails: log.lotDetails || '',
+    notes: log.notes || ''
+  };
+  state.cookingLogs.push(newLog);
+  saveStore();
+  return newLog;
+}
+
+function updateCookingLog(id, updatedFields) {
+  const idx = state.cookingLogs.findIndex(c => c.id === id);
+  if (idx !== -1) {
+    state.cookingLogs[idx] = {
+      ...state.cookingLogs[idx],
+      ...updatedFields
+    };
+    saveStore();
+    return true;
+  }
+  return false;
+}
+
+function deleteCookingLog(id) {
+  const idx = state.cookingLogs.findIndex(c => c.id === id);
+  if (idx !== -1) {
+    state.cookingLogs.splice(idx, 1);
+    saveStore();
+    return true;
+  }
+  return false;
+}
+
+// --- 新規：清掃・掃除記録管理アクション ---
+function addCleaningLog(log) {
+  const newLog = {
+    id: `clean-${Date.now().toString().slice(-3)}-${Math.random().toString(36).slice(2, 5)}`,
+    date: log.date || new Date().toISOString().split('T')[0],
+    area: log.area || 'ホール',
+    checkedBy: log.checkedBy || state.restaurantInfo.manager,
+    isFloorCleaned: !!log.isFloorCleaned,
+    isTrashRemoved: !!log.isTrashRemoved,
+    isContactPrevented: !!log.isContactPrevented,
+    status: log.status || 'good',
+    notes: log.notes || ''
+  };
+  state.cleaningLogs.push(newLog);
+  saveStore();
+  return newLog;
+}
+
+function updateCleaningLog(id, updatedFields) {
+  const idx = state.cleaningLogs.findIndex(c => c.id === id);
+  if (idx !== -1) {
+    state.cleaningLogs[idx] = {
+      ...state.cleaningLogs[idx],
+      ...updatedFields
+    };
+    saveStore();
+    return true;
+  }
+  return false;
+}
+
+function deleteCleaningLog(id) {
+  const idx = state.cleaningLogs.findIndex(c => c.id === id);
+  if (idx !== -1) {
+    state.cleaningLogs.splice(idx, 1);
+    saveStore();
+    return true;
+  }
+  return false;
+}
+
+// --- 店舗情報管理 ---
+function updateRestaurantInfo(info) {
+  state.restaurantInfo = {
+    ...state.restaurantInfo,
+    ...info
+  };
+  saveStore();
+  return true;
+}
+
+// --- ローカルストレージ全リセット (開発初期化用) ---
+function resetToSeeds() {
+  localStorage.removeItem(STORE_KEY);
+  loadStore();
+}
+
+
+// ============================================================================
+// エクスポート
+// ============================================================================
+export const restaurantStore = readonly({
+  state,
+  // 演算プロパティ (Computed)
+  decodedMenus,
+  dashboardStats,
+  decodedReceipts,
+  decodedCookingLogs,
+  decodedCleaningLogs, // 新規追加
+  traceabilityChain,   // 新規追加
+  ingredientsMap,
+  // 補助ユーティリティ
+  calculateOrganicRatio,
+  // Actions
+  setTab,
+  addIngredient,
+  updateIngredient,
+  deleteIngredient,
+  addMenu,
+  updateMenu,
+  deleteMenu,
+  addReceipt,
+  updateReceipt,
+  deleteReceipt,
+  addCookingLog,
+  updateCookingLog,
+  deleteCookingLog,
+  addCleaningLog,     // 新規追加
+  updateCleaningLog,  // 新規追加
+  deleteCleaningLog,  // 新規追加
+  updateRestaurantInfo,
+  resetToSeeds
+});

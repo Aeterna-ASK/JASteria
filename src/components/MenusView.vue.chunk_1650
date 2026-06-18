@@ -1,0 +1,46 @@
+Created At: 2026-05-27T10:39:13Z
+Completed At: 2026-05-27T10:39:13Z
+Total Bytes: 113147
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+<path d="M12 2.5l.8 1.6 1.8.2-1.3 1.3.3 1.8-1.6-.9-1.6.9.3-1.8-1.3-1.3 1.8-.2.8-1.6z" :fill="n <= getTsuboCount(selectedMenuForSpec.organicRatio) ? '#a82c24' : '#e6dfd9'" />
+<path d="M9 9.5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1.5H9V9.5zm9 3.5a3 3 0 0 0-3-3H9a3 3 0 0 0-3 3v2c0 2 1.5 3 3 4v3c-1.5 1-2.5 2.5-2.5 4.5v1H18v-1c0-2-1-3.5-2.5-4.5v-3c1.5-1 3-2 3-4v-2z" :fill="n <= getTsuboCount(selectedMenuForSpec.organicRatio) ? '#801c15' : '#e6dfd9'" />
+</svg>
+</div>
+<span style="font-size: 0.65rem; color: #8c786c; white-space: nowrap; margin-left: 2px;">({{ getTsuboCount(selectedMenuForSpec.organicRatio) }}個: {{ getTsuboRangeText(selectedMenuForSpec.organicRatio) }})</span>
+</div>
+</td>
+</tr>
+<tr>
+<th>年間目標コース数</th>
+<td class="font-semibold">{{ selectedMenuForSpec.courseTargetNum || '年間3600食' }}</td>
+</tr>
+<tr>
+<th>年間目標単品数</th>
+<td class="font-semibold">{{ selectedMenuForSpec.singleTargetNum || '年間60食' }}</td>
+</tr>
+</table>
+</div>
+</div>
+
+<!-- 備考欄 -->
+<div class="sheet-card mt-4">
+<div class="sheet-card-title">■ 備考 (混同・汚染防止対策など、監査上重要な管理事項)</div>
+<div class="remarks-text pre-wrap font-bold text-forest-dark">{{ selectedMenuForSpec.remarks || '特記事項なし' }}</div>
+</div>
+
+</div>
+</div>
+<div class="modal-footer no-print">
+<button class="btn btn-outline" @click="showSpecSheet = false">閉じる</button>
+<button class="btn btn-primary flex items-center gap-1" @click="handlePrint">
+<Printer :size="16" /> この帳票を印刷 (PDF出力)
+</button>
+</div>
+</div>
+</div>
+</Teleport>
+</div>
+</template>
+
+<style scoped>
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.

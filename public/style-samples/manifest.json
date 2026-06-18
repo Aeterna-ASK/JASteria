@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "description": "AI料理画像生成のスタイル参照ライブラリ。料理名・食材から自動選定されます。",
+  "samples": [
+    {
+      "id": "washoku-dark-bowl",
+      "file": "washoku-dark-bowl.jpg",
+      "categories": ["和食", "japanese", "煮物", "汁物", "小鉢", "default"],
+      "keywords": ["味噌", "醤油", "出汁", "黒酢", "豆腐", "卵", "鶏", "魚"],
+      "promptHints": "dark glazed ceramic small Japanese bowl top thirty degree angle soft natural lighting plain neutral background"
+    },
+    {
+      "id": "washoku-wood-square",
+      "file": "washoku-wood-square.jpg",
+      "categories": ["漬物", "pickle", "副菜", "前菜", "おばんざい", "ぬか漬け"],
+      "keywords": ["ぬか", "ピクルス", "白菜", "きゅうり", "大根", "茄子", "発酵"],
+      "promptHints": "small wooden square plate top forty five degree angle soft warm window light plain wood texture background minimal"
+    },
+    {
+      "id": "yoshoku-white-round",
+      "file": "yoshoku-white-round.jpg",
+      "categories": ["洋食", "western", "メイン", "肉料理", "main"],
+      "keywords": ["ハンバーグ", "ステーキ", "ローストビーフ", "チキン", "ポーク", "豚"],
+      "promptHints": "wide white round porcelain plate top thirty degree angle bright diffused studio lighting plain off white background"
+    },
+    {
+      "id": "salad-shallow-bowl",
+      "file": "salad-shallow-bowl.jpg",
+      "categories": ["サラダ", "salad", "前菜"],
+      "keywords": ["生野菜", "レタス", "トマト", "きゅうり", "キャベツ", "葉物"],
+      "promptHints": "wide shallow off white ceramic bowl top forty degree angle airy soft daylight plain pale background"
+    },
+    {
+      "id": "noodle-deep-bowl",
+      "file": "noodle-deep-bowl.jpg",
+      "categories": ["麺類", "noodle", "うどん", "そば", "ラーメン"],
+      "keywords": ["麺", "つゆ", "出汁", "つけ汁"],
+      "promptHints": "deep glazed Japanese noodle bowl top twenty degree angle warm soft lighting plain neutral background"
+    },
+    {
+      "id": "rice-bowl",
+      "file": "rice-bowl.jpg",
+      "categories": ["丼", "rice-bowl", "ごはん物", "炊き込み", "親子丼"],
+      "keywords": ["丼", "ご飯", "ごはん", "米", "炊き込み", "親子"],
+      "promptHints": "Japanese rice bowl glazed ceramic top twenty five degree angle soft natural light plain neutral background"
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+Created At: 2026-05-27T10:33:55Z
+Completed At: 2026-05-27T10:33:55Z
+Total Bytes: 105248
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+<div class="result-seal-container">
+<div :class="['organic-seal', selectedMenuForSpec.isValidOrganic ? 'seal-valid' : 'seal-invalid']">
+<div class="seal-inner">
+<span class="seal-header">有機割合</span>
+<span class="seal-percent">{{ selectedMenuForSpec.organicRatio }}%</span>
+<span class="seal-footer">{{ selectedMenuForSpec.isValidOrganic ? 'JAS 0004 適合' : 'JAS 不適合' }}</span>
+</div>
+</div>
+</div>
+
+<!-- 作り方・その他基準 -->
+<div class="grid-2-col mt-4">
+<div class="sheet-card">
+<div class="sheet-card-title">■ 調理方法 (混同・汚染防止手順)</div>
+<div class="instructions-text pre-wrap">{{ selectedMenuForSpec.cookingInstructions || '調理手順の登録がありません。' }}</div>
+</div>
+<div class="sheet-card">
+<div class="sheet-card-title">■ 有機料理の表示・適合基準</div>
+<table class="nested-spec-table">
+<tr>
+<th class="w-40">表示期間</th>
+<td>{{ selectedMenuForSpec.displayPeriod || '通年' }}</td>
+</tr>
+<tr>
+<th>表示方法</th>
+<td>{{ selectedMenuForSpec.displayMethod || 'メニューに掲載' }}</td>
+</tr>
+<tr>
+<th>適合の表示内容 / 有機料理の表示様式</th>
+<td>{{ selectedMenuForSpec.displayStyle || '記号により表示' }}</td>
+</tr>
+<tr>
+<th>年間目標コース数</th>
+<td class="font-semibold">{{ selectedMenuForSpec.courseTargetNum || '年間3600食' }}</td>
+</tr>
+<tr>
+<th>年間目標単品数</th>
+<td class="font-semibold">{{ selectedMenuForSpec.singleTargetNum || '年間60食' }}</td>
+</tr>
+</table>
+</div>
+</div>
+
+<!-- 備考欄 -->
+<div class="sheet-card mt-4">
+<div class="sheet-card-title">■ 備考 (混同・汚染防止対策など、監査上重要な管理事項)</div>
+<div class="remarks-text pre-wrap font-bold text-forest-dark">{{ selectedMenuForSpec.remarks || '特記事項なし' }}</div>
+</div>
+
+</div>
+</div>
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
