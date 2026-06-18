@@ -447,6 +447,30 @@ let isApplyingRemote = false;
 const menuImageCache = {};
 // クラウド同期(syncToFirestore)のデバウンスタイマー
 let firestoreSyncTimer = null;
+// 直近にクラウドへ反映済み（または受信済み）の状態シグネチャ。
+// これと一致する内容は再書き込みしない＝エコーによる無限同期ループを防ぐ。
+let lastSyncedSignature = null;
+
+// クラウドへ保存する対象データの内容シグネチャ（画像を含む。変更検知専用）。
+function computeStateSignature() {
+  try {
+    return JSON.stringify({
+      menus: state.menus || [],
+      ingredients: state.ingredients || [],
+      receipts: state.receipts || [],
+      cookingLogs: state.cookingLogs || [],
+      cleaningLogs: state.cleaningLogs || [],
+      manualChapters: state.manualChapters || [],
+      auditDocuments: state.auditDocuments || [],
+      t_inbox_documents: state.t_inbox_documents || [],
+      auditCategories: state.auditCategories || {},
+      documents: state.documents || [],
+      externalRegInfo: state.externalRegInfo || {}
+    });
+  } catch (e) {
+    return null;
+  }
+}
 
 function loadStore() {
   try {
@@ -537,6 +561,11 @@ function syncToFirestore() {
   if (firestoreSyncTimer) clearTimeout(firestoreSyncTimer);
   firestoreSyncTimer = setTimeout(async () => {
     try {
+      // 直近にクラウドへ反映済み／受信済みの内容と同一なら書き込まない（エコー＝無限ループ防止）。
+      const signature = computeStateSignature();
+      if (signature !== null && signature === lastSyncedSignature) {
+        return;
+      }
       console.log('[Firestore Sync] クラウドへの同期開始...');
       // 画像付きメニューを抽出してキャッシュを更新（本体ドキュメントからは画像を除外する）
       const imaged = (state.menus || [])
@@ -579,6 +608,8 @@ function syncToFirestore() {
         );
         await Promise.all(batch);
       }
+      // 書き込んだ内容を「同期済み」として記録（次回同一内容ならスキップ）。
+      lastSyncedSignature = computeStateSignature();
       console.log('[Firestore Sync] 全データの同期保存完了');
     } catch (e) {
       console.error('[Firestore Sync] 保存失敗', e);
@@ -1207,6 +1238,8 @@ function initFirestoreSync() {
         m.sampleImageUrl = data.sampleImageUrl || '';
       }
     });
+    // 受信した画像を反映した状態を「同期済み」として記録（書き戻しによるループ防止）。
+    lastSyncedSignature = computeStateSignature();
   }, (err) => console.error('menuImages sync error:', err));
 
   // 各種類別ドキュメントをリアルタイム購読し、ローカル状態へ反映する。
@@ -1242,6 +1275,8 @@ function initFirestoreSync() {
           }
           // localStorage へ反映（isApplyingRemote=true のためクラウドへは書き戻さない）。
           saveStore();
+          // 受信した内容を「同期済み」として記録（直後の saveStore による書き戻しを防ぐ）。
+          lastSyncedSignature = computeStateSignature();
         } finally {
           isApplyingRemote = false;
         }
