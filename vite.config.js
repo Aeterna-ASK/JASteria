@@ -7,7 +7,10 @@ export default defineConfig({
   plugins: [
     vue(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'autoUpdate' は新版検知時にページを自動リロードする。環境によっては
+      // controllerchange が連続発火してリロードループ（＝同期が延々繰り返される）に
+      // なるため、自動リロードしない 'prompt' に変更。更新は次回の完全再起動時に反映される。
+      registerType: 'prompt',
       includeAssets: ['favicon.svg', 'logo.png', 'tsubo.png'],
       manifest: {
         name: 'JASteria — 有機JAS管理アシスト',
