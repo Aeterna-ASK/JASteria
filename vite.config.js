@@ -7,9 +7,12 @@ export default defineConfig({
   plugins: [
     vue(),
     VitePWA({
-      // 'autoUpdate' は新版検知時にページを自動リロードする。環境によっては
-      // controllerchange が連続発火してリロードループ（＝同期が延々繰り返される）に
-      // なるため、自動リロードしない 'prompt' に変更。更新は次回の完全再起動時に反映される。
+      // 【緊急対応】既存の autoUpdate Service Worker が controllerchange 連続発火で
+      // リロードループに陥り、ページが何千回も再読込されて操作不能になった。
+      // selfDestroying:true は「自己破棄するSW」を生成し、古いSWを置き換えた瞬間に
+      // 自分自身と全キャッシュを削除する。これによりループを確実に停止し、以後は
+      // SWなしの通常Webページとして動作する（PWA/オフライン機能は一旦無効化）。
+      selfDestroying: true,
       registerType: 'prompt',
       includeAssets: ['favicon.svg', 'logo.png', 'tsubo.png'],
       manifest: {
