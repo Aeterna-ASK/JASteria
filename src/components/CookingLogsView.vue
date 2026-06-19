@@ -392,64 +392,57 @@ const getMenuOrganicClaim = (id) => {
 
     <!-- 表形式（月×メニュー食数表）モード -->
     <template v-else>
-      <div class="filter-bar card mb-4" style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
-        <div style="display: flex; align-items: center; gap: 0.5rem;">
-          <span class="text-sub font-bold" style="font-size: 0.85rem;">開始年月:</span>
-          <select v-model="matrixStartYear" class="input-organic" style="padding: 0.3rem 0.5rem;">
+      <div class="matrix-toolbar">
+        <div class="matrix-period">
+          <span class="matrix-period-label">表示期間</span>
+          <select v-model="matrixStartYear" class="matrix-select">
             <option v-for="y in matrixYears" :key="y" :value="y">{{ y }}年</option>
           </select>
-          <select v-model="matrixStartMonth" class="input-organic" style="padding: 0.3rem 0.5rem;">
+          <select v-model="matrixStartMonth" class="matrix-select">
             <option v-for="m in 12" :key="m" :value="m">{{ m }}月</option>
           </select>
+          <span class="matrix-period-hint">から 12 ヶ月</span>
         </div>
-        <div class="text-sub text-xs flex items-center gap-1" style="margin-left: auto;">
-          <Info :size="14" /> セルに食数を入力すると、その月・そのメニューの調理記録が自動で作成／更新されます。
+        <div class="matrix-hint">
+          <Info :size="15" /> セルに食数を入力すると、その月・メニューの記録が自動で作成／更新されます
         </div>
       </div>
 
-      <div class="table-container">
-        <table class="table-organic matrix-table">
+      <div class="matrix-wrap">
+        <table class="foodcount-matrix">
           <thead>
             <tr>
-              <th style="min-width: 92px; text-align: left; position: sticky; left: 0; background: #f8fafc; z-index: 2;">対象年月</th>
-              <th v-for="menu in matrixMenus" :key="menu.id" style="min-width: 88px; text-align: center;">
-                {{ menu.masterName || menu.name }}
-              </th>
-              <th style="min-width: 72px; text-align: center; background: #fffbeb;">月合計</th>
+              <th class="fm-corner">対象年月</th>
+              <th v-for="menu in matrixMenus" :key="menu.id" class="fm-menu-head">{{ menu.masterName || menu.name }}</th>
+              <th class="fm-total-head">月合計</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="matrixMenus.length === 0">
-              <td :colspan="2" class="text-center text-light py-8">表示できるメニューがありません。</td>
+              <td :colspan="2" class="fm-empty">表示できるメニューがありません。</td>
             </tr>
             <tr v-for="m in matrixMonths" :key="m.key">
-              <td class="font-mono text-sm" style="white-space: nowrap; position: sticky; left: 0; background: #ffffff; z-index: 1;">
-                {{ m.year }}年{{ m.month }}月
-              </td>
-              <td v-for="menu in matrixMenus" :key="menu.id" style="text-align: center; padding: 2px;">
+              <th class="fm-month">{{ m.year }}<span class="fm-month-unit">年</span>{{ m.month }}<span class="fm-month-unit">月</span></th>
+              <td v-for="menu in matrixMenus" :key="menu.id" class="fm-cell">
                 <input
                   type="number"
                   min="0"
-                  class="matrix-cell-input"
+                  class="fm-input"
                   :value="cellQuantity(menu.masterName, m.key) || ''"
                   @change="setCellQuantity(menu, m.key, $event.target.value)"
-                  placeholder="-"
+                  placeholder="–"
                 />
               </td>
-              <td class="font-mono text-center font-bold" style="background: #fffbeb; color: #b45309;">
+              <td class="fm-rowtotal">
                 {{ matrixMenus.reduce((s, menu) => s + cellQuantity(menu.masterName, m.key), 0).toLocaleString() }}
               </td>
             </tr>
           </tbody>
           <tfoot>
-            <tr style="font-weight: bold; background: #f1f5f9;">
-              <td style="position: sticky; left: 0; background: #f1f5f9; z-index: 1;">合計</td>
-              <td v-for="menu in matrixMenus" :key="menu.id" class="font-mono text-center" style="color: #0369a1;">
-                {{ columnTotal(menu.masterName).toLocaleString() }}
-              </td>
-              <td class="font-mono text-center" style="background: #fef3c7; color: #92400e;">
-                {{ grandTotal.toLocaleString() }}
-              </td>
+            <tr>
+              <th class="fm-foot-label">合計</th>
+              <td v-for="menu in matrixMenus" :key="menu.id" class="fm-foot-cell">{{ columnTotal(menu.masterName).toLocaleString() }}</td>
+              <td class="fm-grandtotal">{{ grandTotal.toLocaleString() }}</td>
             </tr>
           </tfoot>
         </table>
@@ -577,33 +570,178 @@ const getMenuOrganicClaim = (id) => {
   gap: 1rem;
 }
 
-/* 表形式（食数マトリクス）モード */
-.matrix-table th,
-.matrix-table td {
-  white-space: nowrap;
-}
-.matrix-cell-input {
-  width: 64px;
-  text-align: center;
-  padding: 0.35rem 0.25rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font-family: monospace;
-  font-size: 0.9rem;
+/* ============================================================================
+   表形式（食数マトリクス）モダンデザイン
+   ============================================================================ */
+.matrix-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
   background: #ffffff;
+  border: 1px solid #e3ede7;
+  border-radius: 14px;
+  padding: 0.85rem 1.15rem;
+  margin-bottom: 1.1rem;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.04);
+}
+.matrix-period {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.matrix-period-label {
+  font-weight: 700;
+  color: #065f46;
+  font-size: 0.95rem;
+}
+.matrix-period-hint {
+  color: #64748b;
+  font-size: 0.85rem;
+}
+.matrix-select {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  font-size: 0.98rem;
+  background: #fff;
+  color: #1f2937;
+  cursor: pointer;
+}
+.matrix-select:focus {
+  outline: none;
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+}
+.matrix-hint {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+.matrix-wrap {
+  overflow-x: auto;
+  border-radius: 16px;
+  border: 1px solid #e3ede7;
+  box-shadow: 0 6px 22px rgba(16, 24, 40, 0.07);
+  background: #fff;
+}
+.foodcount-matrix {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
   color: #1f2937;
 }
-.matrix-cell-input:focus {
+.foodcount-matrix th,
+.foodcount-matrix td {
+  padding: 0.8rem 0.9rem;
+  text-align: center;
+  white-space: nowrap;
+  border-bottom: 1px solid #eef3f0;
+}
+/* ヘッダー行 */
+.foodcount-matrix thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #065f46;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.95rem;
+  border-bottom: none;
+  letter-spacing: 0.02em;
+}
+.fm-menu-head { min-width: 104px; }
+.fm-corner {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  text-align: left;
+  background: #064e3b;
+  min-width: 116px;
+}
+.fm-total-head { background: #047857; min-width: 90px; }
+/* 年月（左固定列） */
+.fm-month {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #f0fdf4;
+  color: #065f46;
+  font-weight: 700;
+  text-align: left;
+  font-size: 1rem;
+  border-right: 1px solid #d1fae5;
+}
+.fm-month-unit {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #16a34a;
+  margin: 0 1px;
+}
+/* ゼブラ & ホバー */
+.foodcount-matrix tbody tr:nth-child(even) td.fm-cell { background: #f7fbf9; }
+.foodcount-matrix tbody tr:hover td.fm-cell { background: #ecfdf5; }
+.fm-cell { padding: 0.35rem; }
+/* 入力セル */
+.fm-input {
+  width: 80px;
+  text-align: center;
+  font-size: 1.1rem;
+  font-family: inherit;
+  font-weight: 600;
+  padding: 0.55rem 0.4rem;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #111827;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.fm-input::placeholder { color: #cbd5e1; font-weight: 400; }
+.fm-input:hover { background: #ffffff; border-color: #d1fae5; }
+.fm-input:focus {
   outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(45, 74, 52, 0.12);
+  background: #ffffff;
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
 }
-/* 数値入力のスピンボタンを控えめに */
-.matrix-cell-input::-webkit-outer-spin-button,
-.matrix-cell-input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
+.fm-input::-webkit-outer-spin-button,
+.fm-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+/* 月合計列 */
+.fm-rowtotal {
+  background: #ecfdf5;
+  color: #047857;
+  font-weight: 800;
+  font-family: monospace;
+  font-size: 1.05rem;
 }
+/* 合計フッター */
+.foodcount-matrix tfoot th,
+.foodcount-matrix tfoot td {
+  background: #064e3b;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 1.02rem;
+  border-bottom: none;
+  font-family: monospace;
+}
+.fm-foot-label {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #053d2e;
+  text-align: left;
+  font-family: inherit;
+}
+.fm-grandtotal {
+  background: #022c22;
+  color: #6ee7b7;
+  font-size: 1.15rem;
+}
+.fm-empty { padding: 2.5rem; color: #94a3b8; font-size: 0.95rem; }
 
 .view-header h2 {
   margin: 0;
