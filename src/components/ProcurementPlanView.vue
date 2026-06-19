@@ -18,7 +18,60 @@ const availableYears = computed(() => {
 });
 
 const handlePrint = () => {
-  window.print();
+  // 画面の @media print はアプリ全体のレイアウト/アニメーションの影響を受けて
+  // 空白になりやすいため、料理スペックと同じく「新しいウィンドウに内容を書き出して
+  // 印刷する」確実な方式にする。現在表示中のビュー（メニュー別／食材別）を印刷する。
+  const el = document.querySelector('.procurement-plan-view');
+  if (!el) { window.print(); return; }
+
+  // 現在ページの全スタイル（@media print を除く）を収集して引き継ぐ
+  let cssText = '';
+  try {
+    for (const sheet of document.styleSheets) {
+      try {
+        for (const rule of sheet.cssRules) {
+          if (rule.type !== CSSRule.MEDIA_RULE || !rule.media.mediaText.includes('print')) {
+            cssText += rule.cssText + '\n';
+          }
+        }
+      } catch {}
+    }
+  } catch {}
+
+  const html = `<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>有機食材調達計画書</title>
+<style>
+  @page { size: A4 landscape; margin: 8mm; }
+  * { box-sizing: border-box; animation: none !important; transition: none !important; }
+  html, body { margin: 0; padding: 0; background: #ffffff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  ${cssText}
+  /* 画面用レイアウトを打ち消して印刷向けに整える */
+  .procurement-plan-view { width: 100% !important; opacity: 1 !important; transform: none !important; padding: 0 !important; }
+  .no-print { display: none !important; }
+  .only-print { display: block !important; }
+  .card { box-shadow: none !important; border: none !important; padding: 0 !important; margin-bottom: 8mm !important; opacity: 1 !important; transform: none !important; }
+  .table-container { overflow: visible !important; border: none !important; }
+  table { width: 100% !important; border-collapse: collapse !important; font-size: 9px !important; }
+  th, td { border: 1px solid #000 !important; padding: 2px 3px !important; }
+  .print-avoid-break { page-break-inside: avoid; }
+</style>
+</head>
+<body>
+  ${el.outerHTML}
+  <script>
+    window.onload = function () { window.print(); window.onafterprint = function () { window.close(); }; };
+  <\/script>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=1100,height=800');
+  if (!win) { window.print(); return; } // ポップアップブロック時はフォールバック
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
 };
 
 const parseTarget = (str) => {
