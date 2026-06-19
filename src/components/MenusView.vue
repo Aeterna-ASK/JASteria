@@ -2102,8 +2102,8 @@ const selectedMenuSpecData = computed(() => {
                     <span style="width: 8px; height: 8px; border-radius: 50%; background: #3b82f6; display: inline-block;"></span>
                     完成写真
                   </h3>
-                  <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; height: 120px; display: flex; align-items: center; justify-content: center;">
-                    <img v-if="selectedMenuForSpec.imageUrl" :src="selectedMenuForSpec.imageUrl" style="width: 100%; height: 100%; object-fit: cover;" />
+                  <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; height: 240px; display: flex; align-items: center; justify-content: center;">
+                    <img v-if="selectedMenuForSpec.imageUrl" :src="selectedMenuForSpec.imageUrl" style="width: 100%; height: 100%; object-fit: contain;" />
                     <div v-else style="display: flex; flex-direction: column; align-items: center; justify-content: center; color: #9ca3af;">
                       <Camera :size="24" style="margin-bottom: 4px; opacity: 0.5;" />
                       <span style="font-size: 0.65rem; font-weight: bold;">[画像未登録]</span>
