@@ -500,3 +500,53 @@ a:hover {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* ============================================================================
+   印刷用グローバルスタイル
+   各画面の window.print() で、アプリの全画面レイアウト（flex/100vh/スクロール）
+   が中身を隠して印刷が空白になる問題に対応。印刷時はレイアウトを解除し、
+   サイドバー・ヘッダー・no-print 要素を隠して本文を全文印刷できるようにする。
+   （コンポーネント側の scoped @media print は他要素に効かないためグローバルで定義）
+   ============================================================================ */
+@media print {
+  html, body, #app {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+  .app-layout {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    width: 100% !important;
+  }
+  .main-area {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+  .content-container {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+  .content-container > .container {
+    max-width: none !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  /* 印刷に不要な要素を隠す */
+  .sidebar,
+  .top-header,
+  .no-print {
+    display: none !important;
+  }
+  .only-print {
+    display: block !important;
+  }
+}
+
