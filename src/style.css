@@ -548,5 +548,20 @@ a:hover {
   .only-print {
     display: block !important;
   }
+  /* 印刷ではアニメーションが実行されないため、フェードイン等で opacity:0 のまま
+     内容が透明（＝真っ白）になるのを防ぐ。アニメーション/トランジションを無効化し、
+     透明・変形をリセットして必ず表示させる。 */
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .animate-fade-in,
+  .print-container,
+  .procurement-plan-view,
+  .card,
+  .container {
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }
 
