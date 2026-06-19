@@ -71,6 +71,73 @@ const activeMasterMenus = computed(() => {
   return Array.from(map.values());
 });
 
+// ============================================================================
+// 表形式（月×メニューの食数マトリクス）モード
+// ============================================================================
+const viewMode = ref('list'); // 'list' | 'matrix'
+
+const matrixYears = computed(() => {
+  const cur = new Date().getFullYear();
+  return Array.from({ length: 8 }, (_, i) => cur - 4 + i);
+});
+const matrixStartYear = ref(new Date().getFullYear());
+const matrixStartMonth = ref(1);
+
+// 開始年月から12ヶ月分の月キー(YYYY-MM)を生成
+const matrixMonths = computed(() => {
+  const arr = [];
+  for (let i = 0; i < 12; i++) {
+    let cm = matrixStartMonth.value + i;
+    let cy = matrixStartYear.value;
+    while (cm > 12) { cm -= 12; cy++; }
+    arr.push({ key: `${cy}-${String(cm).padStart(2, '0')}`, year: cy, month: cm });
+  }
+  return arr;
+});
+
+// マトリクスの列（アクティブなメニュー）
+const matrixMenus = computed(() => activeMasterMenus.value);
+
+// 指定メニュー(masterName)・月(YYYY-MM)に一致する調理ログ
+const logsForCell = (masterName, monthKey) =>
+  decodedCookingLogs.value.filter(l => l.masterName === masterName && l.date === monthKey);
+
+// セルの食数（その月・そのメニューの合計）
+const cellQuantity = (masterName, monthKey) =>
+  logsForCell(masterName, monthKey).reduce((s, l) => s + (Number(l.quantity) || 0), 0);
+
+// 列（メニュー）ごとの合計
+const columnTotal = (masterName) =>
+  matrixMonths.value.reduce((s, m) => s + cellQuantity(masterName, m.key), 0);
+
+// 全体合計
+const grandTotal = computed(() =>
+  matrixMenus.value.reduce((s, menu) => s + columnTotal(menu.masterName), 0)
+);
+
+// セル編集：食数を入力すると、その月・そのメニューの記録を作成／更新する
+const setCellQuantity = (menu, monthKey, rawValue) => {
+  const value = Math.max(0, Math.round(Number(rawValue) || 0));
+  const matches = logsForCell(menu.masterName, monthKey);
+  if (matches.length === 0) {
+    if (value > 0) {
+      restaurantStore.addCookingLog({
+        date: monthKey,
+        menuId: menu.id,
+        quantity: value,
+        checkedBy: state.restaurantInfo.manager,
+        isUtensilsClean: true,
+        isIngredientVerified: true,
+        lotDetails: '',
+        notes: ''
+      });
+    }
+  } else {
+    // 複数ある月は先頭の記録を更新する（1セル＝その月の代表記録）
+    restaurantStore.updateCookingLog(matches[0].id, { quantity: value });
+  }
+};
+
 // モーダル・フォーム状態
 const showModal = ref(false);
 const isEditing = ref(false);
@@ -225,11 +292,18 @@ const getMenuOrganicClaim = (id) => {
         <h2 class="flex items-center gap-2"><CheckCircle :size="24" /> 調理・提供点検記録</h2>
         <p class="text-sub">「有機料理」としてメニューを提供する際、調理器具を洗浄して一般品と混ざるのを防ぎ、正しい有機材料を使用したロットを追跡した証跡です。</p>
       </div>
-      <button class="btn btn-primary" @click="openAddModal">
-        <Plus :size="18" /> 新規調理記録
-      </button>
+      <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <button class="btn btn-outline" @click="viewMode = viewMode === 'list' ? 'matrix' : 'list'">
+          {{ viewMode === 'list' ? '表形式（食数表）で表示' : 'リスト表示に戻す' }}
+        </button>
+        <button class="btn btn-primary" @click="openAddModal">
+          <Plus :size="18" /> 新規調理記録
+        </button>
+      </div>
     </div>
 
+    <!-- リスト表示モード -->
+    <template v-if="viewMode === 'list'">
     <!-- 検索 & フィルターバー -->
     <div class="filter-bar card mb-6" style="display: flex; gap: 1rem; align-items: center;">
       <div class="form-group" style="margin-bottom: 0; display: flex; align-items: center; gap: 0.5rem;">
@@ -314,6 +388,73 @@ const getMenuOrganicClaim = (id) => {
         </tbody>
       </table>
     </div>
+    </template>
+
+    <!-- 表形式（月×メニュー食数表）モード -->
+    <template v-else>
+      <div class="filter-bar card mb-4" style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span class="text-sub font-bold" style="font-size: 0.85rem;">開始年月:</span>
+          <select v-model="matrixStartYear" class="input-organic" style="padding: 0.3rem 0.5rem;">
+            <option v-for="y in matrixYears" :key="y" :value="y">{{ y }}年</option>
+          </select>
+          <select v-model="matrixStartMonth" class="input-organic" style="padding: 0.3rem 0.5rem;">
+            <option v-for="m in 12" :key="m" :value="m">{{ m }}月</option>
+          </select>
+        </div>
+        <div class="text-sub text-xs flex items-center gap-1" style="margin-left: auto;">
+          <Info :size="14" /> セルに食数を入力すると、その月・そのメニューの調理記録が自動で作成／更新されます。
+        </div>
+      </div>
+
+      <div class="table-container">
+        <table class="table-organic matrix-table">
+          <thead>
+            <tr>
+              <th style="min-width: 92px; text-align: left; position: sticky; left: 0; background: #f8fafc; z-index: 2;">対象年月</th>
+              <th v-for="menu in matrixMenus" :key="menu.id" style="min-width: 88px; text-align: center;">
+                {{ menu.masterName || menu.name }}
+              </th>
+              <th style="min-width: 72px; text-align: center; background: #fffbeb;">月合計</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="matrixMenus.length === 0">
+              <td :colspan="2" class="text-center text-light py-8">表示できるメニューがありません。</td>
+            </tr>
+            <tr v-for="m in matrixMonths" :key="m.key">
+              <td class="font-mono text-sm" style="white-space: nowrap; position: sticky; left: 0; background: #ffffff; z-index: 1;">
+                {{ m.year }}年{{ m.month }}月
+              </td>
+              <td v-for="menu in matrixMenus" :key="menu.id" style="text-align: center; padding: 2px;">
+                <input
+                  type="number"
+                  min="0"
+                  class="matrix-cell-input"
+                  :value="cellQuantity(menu.masterName, m.key) || ''"
+                  @change="setCellQuantity(menu, m.key, $event.target.value)"
+                  placeholder="-"
+                />
+              </td>
+              <td class="font-mono text-center font-bold" style="background: #fffbeb; color: #b45309;">
+                {{ matrixMenus.reduce((s, menu) => s + cellQuantity(menu.masterName, m.key), 0).toLocaleString() }}
+              </td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr style="font-weight: bold; background: #f1f5f9;">
+              <td style="position: sticky; left: 0; background: #f1f5f9; z-index: 1;">合計</td>
+              <td v-for="menu in matrixMenus" :key="menu.id" class="font-mono text-center" style="color: #0369a1;">
+                {{ columnTotal(menu.masterName).toLocaleString() }}
+              </td>
+              <td class="font-mono text-center" style="background: #fef3c7; color: #92400e;">
+                {{ grandTotal.toLocaleString() }}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </template>
 
     <!-- モーダルダイアログ (UX Safety) -->
     <teleport to="body">
@@ -434,6 +575,34 @@ const getMenuOrganicClaim = (id) => {
   align-items: flex-start;
   flex-wrap: wrap;
   gap: 1rem;
+}
+
+/* 表形式（食数マトリクス）モード */
+.matrix-table th,
+.matrix-table td {
+  white-space: nowrap;
+}
+.matrix-cell-input {
+  width: 64px;
+  text-align: center;
+  padding: 0.35rem 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.9rem;
+  background: #ffffff;
+  color: #1f2937;
+}
+.matrix-cell-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(45, 74, 52, 0.12);
+}
+/* 数値入力のスピンボタンを控えめに */
+.matrix-cell-input::-webkit-outer-spin-button,
+.matrix-cell-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .view-header h2 {
