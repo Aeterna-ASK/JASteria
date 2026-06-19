@@ -696,8 +696,9 @@ function calculateOrganicRatio(recipeItems, _depth = 0) {
   // 小数第2位を四捨五入して第1位まで表示
   const roundedRatio = Math.round(ratio * 10) / 10;
   
-  // 有機JASレストラン基準は原則95%以上
-  const isValidOrganicMenu = roundedRatio >= 95.0;
+  // 有機適合メニューの基準は 80%以上（壺3つ以上）。UIの凡例・リアルタイム検証・
+  // 目標ラインもすべて80%基準のため、判定もこれに統一する（95%は壺4つ＝最上位適合の区分）。
+  const isValidOrganicMenu = roundedRatio >= 80.0;
 
   return {
     organicWeight,
