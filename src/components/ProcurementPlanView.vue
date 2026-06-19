@@ -116,75 +116,88 @@ const isMenuTargetMonth = (menu, year, month) => {
   return isActive;
 };
 
+// 開始予定日をタイムスタンプ化（無い場合は 0）
+const getStartTime = (menu) => {
+  if (!menu.startDate) return 0;
+  const t = new Date(menu.startDate.replace(/-/g, '/')).getTime();
+  return isNaN(t) ? 0 : t;
+};
+
 // メニュー別データ算出
 const procurementByMenu = computed(() => {
-  const activeMenus = decodedMenus.value.filter(menu => {
-    if (menu.isActiveVersion === false) return false;
+  // 過去版も含めた全バージョンを対象にする（各版が担当する期間で計上するため）。
+  // ソース系（自家製ソース等）は集計対象外。
+  const targetMenus = decodedMenus.value.filter(menu => {
     if (menu.category && menu.category.includes('ソース')) return false;
     return true;
   });
 
-  const map = {}; // 料理名(masterName)でグループ化
-
-  activeMenus.forEach(menu => {
-    const monthlyTarget = getMenuMonthlyTarget(menu);
-    const annualTarget = Math.round(monthlyTarget * 12);
+  // 料理名(masterName)でバージョンをグループ化
+  const groups = {}; // menuName -> [menu(version), ...]
+  targetMenus.forEach(menu => {
     const menuName = menu.masterName || menu.name;
+    if (!groups[menuName]) groups[menuName] = [];
+    groups[menuName].push(menu);
+  });
 
-    if (!map[menuName]) {
-      map[menuName] = {
-        id: menu.id, // グループの代表ID
-        name: menuName,
-        monthlyTarget: 0,
-        annualTarget: 0,
-        itemsMap: {} // key: supplier_ingredientName
-      };
-    }
+  const result = [];
 
-    // 目標数は一番大きいものを採用する（全シーズン共通の目標数が入っているケースが多いため）
-    if (monthlyTarget > map[menuName].monthlyTarget) {
-      map[menuName].monthlyTarget = Math.round(monthlyTarget);
-      map[menuName].annualTarget = annualTarget;
-    }
+  Object.entries(groups).forEach(([menuName, versions]) => {
+    // 年間目標表示はグループ内の最大月間目標を採用（全シーズン共通の目標が入るケースが多いため）
+    let maxMonthly = 0;
+    versions.forEach(v => {
+      const t = getMenuMonthlyTarget(v);
+      if (t > maxMonthly) maxMonthly = t;
+    });
+    const monthlyTargetDisplay = Math.round(maxMonthly);
+    const annualTarget = Math.round(maxMonthly * 12);
 
-    const items = (menu.recipeDetails || []).filter(r => r.type === 'organic');
-    
-    items.forEach(r => {
-      const ingName = r.name || '不明な食材';
-      const supplier = r.supplier || '未登録';
-      const itemKey = supplier + '_' + ingName;
+    const itemsMap = {}; // key: supplier_ingredientName
 
-      if (!map[menuName].itemsMap[itemKey]) {
-        map[menuName].itemsMap[itemKey] = {
-          ingredientName: ingName,
-          supplier: supplier,
-          monthly: {},
-          total: 0
-        };
-        months.value.forEach(m => map[menuName].itemsMap[itemKey].monthly[m.key] = 0);
-      }
-
-      months.value.forEach(m => {
-        let amount = 0;
-        if (isMenuTargetMonth(menu, m.year, m.month)) {
-          amount = Math.round(monthlyTarget * (r.amount || 0));
-        }
-        map[menuName].itemsMap[itemKey].monthly[m.key] += amount;
-        map[menuName].itemsMap[itemKey].total += amount;
+    months.value.forEach(m => {
+      // その月に有効なバージョンのうち、開始予定日が最も新しいものを1つだけ採用する。
+      // （版の期間が重なっても二重計上せず、最新版のレシピを優先する）
+      let chosen = null;
+      let chosenStart = -Infinity;
+      versions.forEach(v => {
+        if (!isMenuTargetMonth(v, m.year, m.month)) return;
+        const s = getStartTime(v);
+        if (s >= chosenStart) { chosenStart = s; chosen = v; }
       });
+      if (!chosen) return;
+
+      const monthlyTarget = getMenuMonthlyTarget(chosen);
+      const items = (chosen.recipeDetails || []).filter(r => r.type === 'organic');
+      items.forEach(r => {
+        const ingName = r.name || '不明な食材';
+        const supplier = r.supplier || '未登録';
+        const itemKey = supplier + '_' + ingName;
+
+        if (!itemsMap[itemKey]) {
+          itemsMap[itemKey] = { ingredientName: ingName, supplier, monthly: {}, total: 0 };
+          months.value.forEach(mm => itemsMap[itemKey].monthly[mm.key] = 0);
+        }
+
+        const amount = Math.round(monthlyTarget * (r.amount || 0));
+        itemsMap[itemKey].monthly[m.key] += amount;
+        itemsMap[itemKey].total += amount;
+      });
+    });
+
+    const items = Object.values(itemsMap);
+    const totalInPeriod = items.reduce((sum, it) => sum + it.total, 0);
+    if (items.length === 0 || annualTarget <= 0 || totalInPeriod <= 0) return;
+
+    result.push({
+      id: versions[0].id, // グループの代表ID
+      name: menuName,
+      monthlyTarget: monthlyTargetDisplay,
+      annualTarget,
+      items
     });
   });
 
-  return Object.values(map).map(group => {
-    // itemsMapを配列に戻す
-    group.items = Object.values(group.itemsMap);
-    delete group.itemsMap;
-    return group;
-  }).filter(m => {
-    if (m.items.length === 0 || m.annualTarget <= 0) return false;
-    const totalRequiredInPeriod = m.items.reduce((sum, item) => sum + item.total, 0);
-    return totalRequiredInPeriod > 0;
-  });
+  return result;
 });
 
 // 食材（仕入先）別データ算出
