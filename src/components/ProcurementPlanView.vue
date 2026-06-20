@@ -181,6 +181,7 @@ const procurementByMenu = computed(() => {
   // 過去版も含めた全バージョンを対象にする（各版が担当する期間で計上するため）。
   // ソース系（自家製ソース等）は集計対象外。
   const targetMenus = decodedMenus.value.filter(menu => {
+    if (menu.recipeOnly) return false; // レシピ画面のみ表示（非反映）は集計対象外
     if (menu.category && menu.category.includes('ソース')) return false;
     return true;
   });

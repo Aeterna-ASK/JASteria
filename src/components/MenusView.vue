@@ -188,6 +188,7 @@ const form = ref({
   masterName: '',
   price: 1000,
   isOrganicClaim: true,
+  recipeOnly: false,
   description: '',
   recipe: [],
   
@@ -244,6 +245,7 @@ const openCloneModal = (menu) => {
     groupName: menu.groupName || '',
     price: menu.price || 0,
     isOrganicClaim: menu.isOrganicClaim !== undefined ? menu.isOrganicClaim : true,
+    recipeOnly: !!menu.recipeOnly,
     description: menu.description || '',
     recipe: menu.recipe ? menu.recipe.map(r => ({...r})) : [],
     category: menu.category || '有機料理スペック',
@@ -310,6 +312,7 @@ const openAddModal = () => {
     groupName: '',
     price: 0,
     isOrganicClaim: true,
+    recipeOnly: false,
     description: '',
     recipe: [],
     category: '有機料理スペック',
@@ -362,6 +365,7 @@ const openEditModal = (menu) => {
     groupName: menu.groupName || '',
     price: menu.price || 0,
     isOrganicClaim: menu.isOrganicClaim !== undefined ? menu.isOrganicClaim : true,
+    recipeOnly: !!menu.recipeOnly,
     description: menu.description || '',
     recipe: menu.recipe ? menu.recipe.map(r => ({...r})) : [],
     category: menu.category || '有機料理スペック',
@@ -1293,8 +1297,9 @@ const selectedMenuSpecData = computed(() => {
         <!-- 有機表示と適合性インジケータ -->
         <div class="menu-status-bar">
           <div class="badges-row">
+            <span v-if="menu.recipeOnly" class="badge" style="background-color: #fffbeb; color: #92400e; border: 1px solid #fde68a; display: inline-flex; align-items: center; gap: 4px;" title="このレシピはレシピ画面のみに表示され、調達計画・調理点検・ダッシュボードには反映されません">📋 レシピのみ（非反映）</span>
             <span v-if="!menu.isOrganicClaim" class="badge badge-neutral">一般メニュー</span>
-            
+
             <span v-if="menu.isValidOrganic" class="badge badge-success flex items-center gap-1">
               <Check :size="12" /> JAS適合 ({{ menu.organicRatio }}%)
             </span>
@@ -1592,6 +1597,17 @@ const selectedMenuSpecData = computed(() => {
                 <div class="form-group" style="margin-bottom: 1rem;">
                   <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; display: block;">説明文（料理・レシピの特徴など）</label>
                   <textarea v-model="form.description" rows="2" class="input-organic" placeholder="メニューの特徴やこだわりを入力してください"></textarea>
+                </div>
+
+                <!-- レシピ画面のみ表示（他に反映しない）フラグ -->
+                <div class="form-group" style="margin-bottom: 1rem;">
+                  <label style="display: flex; align-items: flex-start; gap: 0.6rem; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 0.75rem 0.9rem; cursor: pointer;">
+                    <input type="checkbox" v-model="form.recipeOnly" style="margin-top: 3px; width: 18px; height: 18px; flex-shrink: 0; cursor: pointer;" />
+                    <span>
+                      <span style="font-weight: 700; font-size: 0.9rem; color: #92400e; display: block;">このレシピはレシピ画面のみに表示（他に反映しない）</span>
+                      <span style="font-size: 0.78rem; color: #b45309;">完了済みのレシピや、ソースとして登録しているレシピなど。ONにすると、食材調達計画・調理提供点検・ダッシュボードの集計には含まれなくなります。</span>
+                    </span>
+                  </label>
                 </div>
 
                                               

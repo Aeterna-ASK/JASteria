@@ -56,6 +56,8 @@ const activeMasterMenus = computed(() => {
     
     // 旧バージョン（アーカイブ）はプルダウンに表示しない
     if (menu.isActiveVersion === false) return;
+    // レシピ画面のみ表示（非反映）は調理点検の対象外
+    if (menu.recipeOnly) return;
     
     if (!map.has(name)) {
       map.set(name, menu);

@@ -762,13 +762,15 @@ const dashboardStats = computed(() => {
   const totalIngredients = state.ingredients.length;
   const organicIngredients = state.ingredients.filter(i => i.type === 'organic').length;
   
-  const totalMenus = state.menus.length;
+  // 「レシピ画面のみ表示（非反映）」のメニューはダッシュボード集計から除外する
+  const countableMenus = decodedMenus.value.filter(m => !m.recipeOnly);
+  const totalMenus = countableMenus.length;
   // デコードしたメニューから有機適合メニューをカウント
-  const compliantMenus = decodedMenus.value.filter(m => m.isValidOrganic).length;
-  const activeOrganicClaims = state.menus.filter(m => m.isOrganicClaim).length;
+  const compliantMenus = countableMenus.filter(m => m.isValidOrganic).length;
+  const activeOrganicClaims = countableMenus.filter(m => m.isOrganicClaim).length;
 
   // 警告数（有機を謳っているのに適合していないメニュー数）
-  const discrepancyCount = decodedMenus.value.filter(m => m.hasDiscrepancy).length;
+  const discrepancyCount = countableMenus.filter(m => m.hasDiscrepancy).length;
 
   return {
     totalIngredients,
@@ -970,6 +972,9 @@ function addMenu(menu) {
       isActiveVersion: menu.isActiveVersion === false ? false : true,
     price: Number(menu.price) || 0,
     isOrganicClaim: !!menu.isOrganicClaim,
+    // レシピ画面のみに表示し、調達計画・調理点検・ダッシュボード等には反映しない
+    // （完了済みレシピやソース用レシピなどの扱い）
+    recipeOnly: !!menu.recipeOnly,
     recipe: menu.recipe || [], // [{ ingredientId, amount }]
     description: menu.description || '',
     
