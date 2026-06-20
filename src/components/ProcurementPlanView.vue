@@ -250,25 +250,12 @@ const procurementByMenu = computed(() => {
         const s = getStartTime(v);
         if (s >= chosenStart) { chosenStart = s; chosen = v; }
       });
-      // レシピ期間内か（＝レシピ作成・更新で数字が決まっている月か）
-      const inRecipePeriod = !!chosen;
-      if (!chosen) {
-        // 黒枠（どのレシピ期間にも入らない月）も予測で埋めるため、最新版のレシピ配合を使う
-        let latest = null; let latestStart = -Infinity;
-        versions.forEach(v => { const s = getStartTime(v); if (s >= latestStart) { latestStart = s; latest = v; } });
-        chosen = latest;
-      }
       if (!chosen) return;
 
-      // その月の食数の決定（優先順位）：
-      //  1) 実績の記録があれば実績（確定・通常色）
-      //  2) レシピ期間内ならレシピの目標食数で上書き（確定・通常色）
-      //  3) それ以外（黒枠）は予測＝実績平均×1.5（青字）
+      // その月の食数：実績があれば実績、無ければ予測（平均×1.5）
       const actual = actualCountFor(menuName, m.key);
-      let count, isPredicted;
-      if (actual > 0) { count = actual; isPredicted = false; }
-      else if (inRecipePeriod) { count = Math.round(getMenuMonthlyTarget(chosen)); isPredicted = false; }
-      else { count = predictedMonthly; isPredicted = true; }
+      const isPredicted = actual <= 0;
+      const count = isPredicted ? predictedMonthly : actual;
 
       const items = (chosen.recipeDetails || []).filter(r => r.type === 'organic');
       items.forEach(r => {
