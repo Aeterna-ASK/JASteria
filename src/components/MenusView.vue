@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import { restaurantStore } from '../store/restaurantStore';
 import { generateMenuImage, compressImageDataUrl } from '../utils/aiImageGen';
+import OrganicRatioMark from './OrganicRatioMark.vue';
 import { 
   FileText, 
   Plus, 
@@ -1248,40 +1249,31 @@ const selectedMenuSpecData = computed(() => {
     <!-- JAS 0004 適合表示記号（壺マーク＋星）の凡例パネル (no-print) (v1.4.0 追加) (v1.9.6 淡色若竹オーガニックグリーン化) -->
     <div class="card mb-6 no-print" style="background: linear-gradient(135deg, #f3faf5 0%, #e7f5ec 100%); border: 1.5px solid #bbf7d0; padding: 1.25rem; border-radius: var(--radius-md); box-shadow: var(--shadow-sm);">
       <div style="display: flex; align-items: flex-start; gap: 0.75rem; border-bottom: 1.5px dashed #bbf7d0; padding-bottom: 0.75rem; margin-bottom: 0.75rem;">
-        <img src="/tsubo.png" style="width: 24px; height: 28px; object-fit: contain; display: inline-block; vertical-align: middle;" />
+        <OrganicRatioMark :stars="4" :size="26" />
         <div>
           <h4 style="margin: 0 0 0.25rem 0; font-size: 0.95rem; font-weight: bold; color: #801c15; display: flex; align-items: center; gap: 0.25rem;">
-            JAS 0004 有機料理適合表示記号（壺マーク・★星付き）の凡例
+            JAS 0004 有機食材の割合表示マーク（壺＋★）の凡例
           </h4>
           <p style="font-size: 0.75rem; color: #5c3d2e; margin: 0; line-height: 1.45;">
-            JAS 0004（有機料理を提供する飲食店等の管理方法）の基準に基づき、顧客に対して有機食材の配合割合を直感的に示すため、黒酢の「アマン壺（てっぺんに星の飾り付き）」をモチーフにした記号表示を行います。大きさ・形状・配色を統一し、割合区分に応じて壺の数を変えてメニューや看板に表示します。
-            <strong style="color: #047857; display: block; margin-top: 2px;">※80%以上（壺3つ以上）で有機適合メニューとなります。</strong>
+            JAS 0004（有機料理を提供する飲食店等の管理方法）の基準に基づき、顧客に対して有機食材の配合割合を直感的に示すため、「アマン壺」をモチーフにした記号表示を行います。壺は1つで、中の★の数を割合区分に応じて変えてメニューや看板に表示します。
+            <strong style="color: #047857; display: block; margin-top: 2px;">※80%以上（★3個以上）で有機適合メニューとなります。</strong>
           </p>
         </div>
       </div>
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem;">
         <div v-for="rule in [
-          { ratio: '95% 以上 (壺 4個)', count: 4, bg: '#f0fdf4', border: '#bbf7d0', text: '#15803d', label: '最上位適合' },
-          { ratio: '80% 以上 95% 未満 (壺 3個)', count: 3, bg: '#ecfdf5', border: '#a7f3d0', text: '#047857', label: '有機適合' },
-          { ratio: '50% 以上 80% 未満 (壺 2個)', count: 2, bg: '#fffbeb', border: '#fde68a', text: '#b45309', label: '一部適合' },
-          { ratio: '50% 未満 (壺 1個)', count: 1, bg: '#fafaf9', border: '#e7e5e4', text: '#57534e', label: '一般区分' }
+          { ratio: '95% 以上 (★4個)', count: 4, bg: '#f0fdf4', border: '#bbf7d0', text: '#15803d', label: '最上位適合' },
+          { ratio: '80% 以上 95% 未満 (★3個)', count: 3, bg: '#ecfdf5', border: '#a7f3d0', text: '#047857', label: '有機適合' },
+          { ratio: '50% 以上 80% 未満 (★2個)', count: 2, bg: '#fffbeb', border: '#fde68a', text: '#b45309', label: '一部適合' },
+          { ratio: '50% 未満 (★1個)', count: 1, bg: '#fafaf9', border: '#e7e5e4', text: '#57534e', label: '一般区分' }
         ]" :key="rule.ratio" :style="{ background: rule.bg, borderColor: rule.border, color: rule.text }" style="padding: 0.65rem 0.85rem; border: 1.5px solid; border-radius: 8px; display: flex; flex-direction: column; gap: 0.5rem; justify-content: space-between; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); transition: transform 0.2s;">
           <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
             <span style="font-size: 0.8rem; font-weight: bold;">{{ rule.ratio }}</span>
             <span :style="{ background: rule.text, color: 'white' }" style="font-size: 0.6rem; padding: 0.1rem 0.35rem; border-radius: 4px; font-weight: bold; letter-spacing: 0.05em;">{{ rule.label }}</span>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; border-top: 1.5px dashed rgba(0,0,0,0.04); padding-top: 0.5rem;">
-            <span style="font-size: 0.7rem; font-weight: 500; color: #8c786c;">壺表示:</span>
-            <div style="display: flex; gap: 3px;">
-              <img 
-                v-for="n in 4" 
-                :key="n" 
-                src="/tsubo.png" 
-                alt="tsubo" 
-                style="width: 22px; height: 26px; object-fit: contain; transition: opacity 0.2s;"
-                :style="{ opacity: n <= rule.count ? 1 : 0.12 }"
-              />
-            </div>
+            <span style="font-size: 0.7rem; font-weight: 500; color: #8c786c;">マーク:</span>
+            <OrganicRatioMark :stars="rule.count" :size="34" />
           </div>
         </div>
       </div>
@@ -1355,17 +1347,10 @@ const selectedMenuSpecData = computed(() => {
           <div class="tsubo-display-box mt-3 p-2.5 rounded-lg border flex items-center justify-between" style="background: #faf8f5; border: 1px solid #ebdcd0; display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 0.8rem; border-radius: 8px; margin-top: 0.75rem; box-shadow: var(--shadow-xs);">
             <div class="flex flex-col gap-0.5" style="display: flex; flex-direction: column; gap: 2px;">
               <span class="text-sub font-bold text-xs" style="color: #801c15; font-size: 0.7rem; font-weight: bold; letter-spacing: 0.03em;">JAS 0004 有機料理適合表示記号</span>
-              <span class="text-sub font-medium" style="color: #8c786c; font-size: 0.65rem;">壺の数: {{ getTsuboCount(menu.organicRatio) }}個 (有機食材 {{ getTsuboRangeText(menu.organicRatio) }})</span>
+              <span class="text-sub font-medium" style="color: #8c786c; font-size: 0.65rem;">★の数: {{ getTsuboCount(menu.organicRatio) }}個 (有機食材 {{ getTsuboRangeText(menu.organicRatio) }})</span>
             </div>
-            <div class="tsubo-icons-row flex gap-1" style="display: flex; gap: 0.25rem;">
-              <img 
-                v-for="n in 4" 
-                :key="n" 
-                src="/tsubo.png" 
-                alt="tsubo" 
-                style="width: 20px; height: 24px; object-fit: contain; transition: opacity 0.2s;"
-                :style="{ opacity: n <= getTsuboCount(menu.organicRatio) ? 1 : 0.15 }"
-              />
+            <div class="tsubo-icons-row" style="display: flex; align-items: center;">
+              <OrganicRatioMark :stars="getTsuboCount(menu.organicRatio)" :size="34" />
             </div>
           </div>
 
@@ -1912,8 +1897,8 @@ const selectedMenuSpecData = computed(() => {
                   <span style="background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-family: monospace;">No.{{ selectedMenuForSpec.id }}</span>
                 </div>
                 <h2 style="font-size: 1.25rem; font-weight: 800; color: #111827; margin: 0 0 8px 0; line-height: 1.2;">{{ selectedMenuForSpec.name }}</h2>
-                <div style="display: flex; gap: 4px;">
-                  <img v-for="n in 4" :key="n" src="/tsubo.png" style="width: 16px; height: 16px; object-fit: contain;" :style="{ opacity: n <= getTsuboCount(selectedMenuForSpec.organicRatio) ? 1 : 0.2, filter: n <= getTsuboCount(selectedMenuForSpec.organicRatio) ? 'none' : 'grayscale(100%)' }" />
+                <div style="display: flex; gap: 4px; align-items: center;">
+                  <OrganicRatioMark :stars="getTsuboCount(selectedMenuForSpec.organicRatio)" :size="30" />
                 </div>
               </div>
 
