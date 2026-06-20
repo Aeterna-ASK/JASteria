@@ -176,6 +176,33 @@ const getStartTime = (menu) => {
   return isNaN(t) ? 0 : t;
 };
 
+// ===== 実績食数（調理・提供点検）と予測 =====
+const cookingLogs = computed(() => restaurantStore.decodedCookingLogs);
+// 予測係数：実績の平均 × この倍率 を未確定月の予測食数とする
+const PREDICT_FACTOR = 1.5;
+
+// 実績食数：マスター名＋月キー(YYYY-MM) の合計
+function actualCountFor(masterName, monthKey) {
+  return cookingLogs.value
+    .filter(l => l.masterName === masterName && l.date === monthKey)
+    .reduce((s, l) => s + (Number(l.quantity) || 0), 0);
+}
+// 実績のある月の平均食数（記録のある月のみで平均）。実績が無ければ null。
+function avgActualFor(masterName) {
+  const byMonth = {};
+  cookingLogs.value.forEach(l => {
+    if (l.masterName === masterName) byMonth[l.date] = (byMonth[l.date] || 0) + (Number(l.quantity) || 0);
+  });
+  const vals = Object.values(byMonth).filter(v => v > 0);
+  if (vals.length === 0) return null;
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
+}
+// 予測の月間食数（実績平均×係数）。実績が無ければ null。
+function predictedMonthlyFor(masterName) {
+  const avg = avgActualFor(masterName);
+  return avg == null ? null : Math.round(avg * PREDICT_FACTOR);
+}
+
 // メニュー別データ算出
 const procurementByMenu = computed(() => {
   // 過去版も含めた全バージョンを対象にする（各版が担当する期間で計上するため）。
@@ -206,11 +233,16 @@ const procurementByMenu = computed(() => {
     const monthlyTargetDisplay = Math.round(maxMonthly);
     const annualTarget = Math.round(maxMonthly * 12);
 
+    // 予測月間食数（実績平均×1.5）。実績が無ければ従来の月間目標で代替。
+    const predMonthly = predictedMonthlyFor(menuName);
+    const predictedMonthly = predMonthly != null ? predMonthly : monthlyTargetDisplay;
+    const predictedAnnual = predictedMonthly * 12;
+    const hasActual = predMonthly != null;
+
     const itemsMap = {}; // key: supplier_ingredientName
 
     months.value.forEach(m => {
       // その月に有効なバージョンのうち、開始予定日が最も新しいものを1つだけ採用する。
-      // （版の期間が重なっても二重計上せず、最新版のレシピを優先する）
       let chosen = null;
       let chosenStart = -Infinity;
       versions.forEach(v => {
@@ -220,7 +252,11 @@ const procurementByMenu = computed(() => {
       });
       if (!chosen) return;
 
-      const monthlyTarget = getMenuMonthlyTarget(chosen);
+      // その月の食数：実績があれば実績、無ければ予測（平均×1.5）
+      const actual = actualCountFor(menuName, m.key);
+      const isPredicted = actual <= 0;
+      const count = isPredicted ? predictedMonthly : actual;
+
       const items = (chosen.recipeDetails || []).filter(r => r.type === 'organic');
       items.forEach(r => {
         const ingName = r.name || '不明な食材';
@@ -228,17 +264,31 @@ const procurementByMenu = computed(() => {
         const itemKey = supplier + '_' + ingName;
 
         if (!itemsMap[itemKey]) {
-          itemsMap[itemKey] = { ingredientName: ingName, supplier, monthly: {}, total: 0 };
-          months.value.forEach(mm => itemsMap[itemKey].monthly[mm.key] = 0);
+          itemsMap[itemKey] = { ingredientName: ingName, supplier, monthlyActual: {}, monthlyPred: {} };
+          months.value.forEach(mm => { itemsMap[itemKey].monthlyActual[mm.key] = 0; itemsMap[itemKey].monthlyPred[mm.key] = 0; });
         }
 
-        const amount = Math.round(monthlyTarget * (r.amount || 0));
-        itemsMap[itemKey].monthly[m.key] += amount;
-        itemsMap[itemKey].total += amount;
+        const amount = Math.round(count * (r.amount || 0));
+        if (isPredicted) itemsMap[itemKey].monthlyPred[m.key] += amount;
+        else itemsMap[itemKey].monthlyActual[m.key] += amount;
       });
     });
 
-    const items = Object.values(itemsMap);
+    // 表示用に整形：monthly(合計) と predicted(その月が予測か) を作る
+    const items = Object.values(itemsMap).map(it => {
+      const monthly = {};
+      const predicted = {};
+      let total = 0;
+      months.value.forEach(mm => {
+        const a = it.monthlyActual[mm.key] || 0;
+        const p = it.monthlyPred[mm.key] || 0;
+        monthly[mm.key] = a + p;
+        predicted[mm.key] = a === 0 && p > 0; // 実績ゼロかつ予測あり＝予測セル
+        total += a + p;
+      });
+      return { ingredientName: it.ingredientName, supplier: it.supplier, monthly, predicted, total };
+    });
+
     const totalInPeriod = items.reduce((sum, it) => sum + it.total, 0);
     if (items.length === 0 || annualTarget <= 0 || totalInPeriod <= 0) return;
 
@@ -247,6 +297,9 @@ const procurementByMenu = computed(() => {
       name: menuName,
       monthlyTarget: monthlyTargetDisplay,
       annualTarget,
+      predictedMonthly,
+      predictedAnnual,
+      hasActual,
       items
     });
   });
@@ -265,25 +318,42 @@ const procurementByIngredient = computed(() => {
         map[key] = {
           supplier: item.supplier,
           ingredientName: item.ingredientName,
-          monthly: {},
-          total: 0,
+          mActual: {},
+          mPred: {},
           menusUsedIn: new Set()
         };
-        months.value.forEach(m => map[key].monthly[m.key] = 0);
+        months.value.forEach(m => { map[key].mActual[m.key] = 0; map[key].mPred[m.key] = 0; });
       }
-      
+
       months.value.forEach(m => {
-        map[key].monthly[m.key] += item.monthly[m.key];
-        map[key].total += item.monthly[m.key];
+        const v = item.monthly[m.key] || 0;
+        if (item.predicted[m.key]) map[key].mPred[m.key] += v;
+        else map[key].mActual[m.key] += v;
       });
       map[key].menusUsedIn.add(menuItem.name);
     });
   });
-  
-  const result = Object.values(map).map(row => ({
-    ...row,
-    menusUsedIn: Array.from(row.menusUsedIn).join(', ')
-  }));
+
+  const result = Object.values(map).map(row => {
+    const monthly = {};
+    const predicted = {};
+    let total = 0;
+    months.value.forEach(m => {
+      const a = row.mActual[m.key] || 0;
+      const p = row.mPred[m.key] || 0;
+      monthly[m.key] = a + p;
+      predicted[m.key] = a === 0 && p > 0;
+      total += a + p;
+    });
+    return {
+      supplier: row.supplier,
+      ingredientName: row.ingredientName,
+      monthly,
+      predicted,
+      total,
+      menusUsedIn: Array.from(row.menusUsedIn).join(', ')
+    };
+  });
   
   // 仕入先順にソート
   return result.sort((a, b) => a.supplier.localeCompare(b.supplier));
@@ -301,7 +371,8 @@ const procurementByIngredient = computed(() => {
             有機食材調達計画
           </h2>
           <p class="text-gray" style="font-size: 0.9rem;">
-            各メニューの目標食数とレシピ配合に基づき、月別の食材調達量を自動計算します。
+            実績の食数とレシピ配合に基づき、月別の食材調達量を自動計算します。
+            <span style="color: #2563eb; font-weight: 600;">青字＝予測</span>（実績の無い月は「実績平均 × 1.5」で補完）。
           </p>
         </div>
         
@@ -345,11 +416,12 @@ const procurementByIngredient = computed(() => {
         <div class="card-header-flex mb-2 print-header-bg">
           <h3 class="font-bold text-lg" style="color: #1e293b;">{{ menu.name }}</h3>
           <div class="text-sm" style="background: #f1f5f9; padding: 0.3rem 0.8rem; border-radius: 4px; font-weight: 600;">
-            年間目標: <span style="color: #0369a1; font-size: 1.1em;">{{ menu.annualTarget.toLocaleString() }}</span> 食 
+            年間目標: <span style="color: #0369a1; font-size: 1.1em;">{{ menu.annualTarget.toLocaleString() }}</span> 食
             (月間平均: {{ menu.monthlyTarget.toLocaleString() }} 食)
+            <span v-if="menu.hasActual" style="margin-left: 0.5rem; color: #2563eb; font-weight: 700;">予測目標: 年間 {{ menu.predictedAnnual.toLocaleString() }} 食 (月 {{ menu.predictedMonthly.toLocaleString() }} 食)</span>
           </div>
         </div>
-        
+
         <div class="table-container">
           <table class="procurement-table">
             <thead>
@@ -363,7 +435,7 @@ const procurementByIngredient = computed(() => {
             <tbody>
               <tr v-for="(item, idx) in menu.items" :key="idx">
                 <td style="font-weight: 600;">{{ item.ingredientName }}</td>
-                <td v-for="m in months" :key="m.key" class="num-cell">
+                <td v-for="m in months" :key="m.key" class="num-cell" :class="{ 'pred-cell': item.predicted[m.key] }">
                   {{ item.monthly[m.key] > 0 ? item.monthly[m.key].toLocaleString() + 'g' : '-' }}
                 </td>
                 <td class="num-cell" style="font-weight: bold; background: #fffbeb; color: #b45309;">
@@ -401,7 +473,7 @@ const procurementByIngredient = computed(() => {
                   <span class="supplier-badge">{{ item.supplier }}</span>
                 </td>
                 <td style="font-weight: 600;">{{ item.ingredientName }}</td>
-                <td v-for="m in months" :key="m.key" class="num-cell">
+                <td v-for="m in months" :key="m.key" class="num-cell" :class="{ 'pred-cell': item.predicted[m.key] }">
                   {{ item.monthly[m.key] > 0 ? (item.monthly[m.key] / 1000).toFixed(1) + 'kg' : '-' }}
                 </td>
                 <td class="num-cell" style="font-weight: bold; background: #fffbeb; color: #b45309;">
@@ -450,6 +522,11 @@ const procurementByIngredient = computed(() => {
   text-align: right;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+/* 予測セル（実績の無い月）＝青字・斜体で区別 */
+.pred-cell {
+  color: #2563eb;
+  font-style: italic;
 }
 .supplier-badge {
   display: inline-block;

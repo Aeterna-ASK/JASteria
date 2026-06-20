@@ -216,6 +216,19 @@ const form = ref({
 
 const errorMessage = ref('');
 
+// 実績食数から予測した「年間目標食数」を算出（実績平均×1.5×12）。実績が無ければ null。
+const predictedAnnualForMenu = (masterName) => {
+  const logs = restaurantStore.decodedCookingLogs;
+  const byMonth = {};
+  logs.forEach(l => {
+    if (l.masterName === masterName) byMonth[l.date] = (byMonth[l.date] || 0) + (Number(l.quantity) || 0);
+  });
+  const vals = Object.values(byMonth).filter(v => v > 0);
+  if (vals.length === 0) return null;
+  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  return Math.round(avg * 1.5) * 12;
+};
+
 const openCloneModal = (menu) => {
   isEditing.value = false;
   currentId.value = null;
@@ -268,6 +281,12 @@ const openCloneModal = (menu) => {
     sampleImageUrl: menu.sampleImageUrl || '',
     imageSeed: menu.imageSeed !== undefined ? menu.imageSeed : null,
   };
+  // 実績から予測した目標食数を新版の目標に自動反映（実績がある場合のみ。既存版の目標は変更しない）
+  const predAnnual = predictedAnnualForMenu(menu.masterName || menu.name);
+  if (predAnnual != null) {
+    form.value.courseTargetNum = `年間${predAnnual}食`;
+    form.value.singleTargetNum = '年間0食';
+  }
   showRecipeModal.value = true;
 };
 
