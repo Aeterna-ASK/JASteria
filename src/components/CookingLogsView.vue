@@ -13,7 +13,8 @@ import {
   Calendar,
   User,
   Coffee,
-  Info
+  Info,
+  Printer
 } from 'lucide-vue-next';
 
 const state = restaurantStore.state;
@@ -136,6 +137,69 @@ const setCellQuantity = (menu, monthKey, rawValue) => {
     // 複数ある月は先頭の記録を更新する（1セル＝その月の代表記録）
     restaurantStore.updateCookingLog(matches[0].id, { quantity: value });
   }
+};
+
+// 食数表を印刷（確実に動く別ウィンドウ書き出し方式。値はプレーンな数値で出力）
+const printMatrix = () => {
+  const menus = matrixMenus.value;
+  const months = matrixMonths.value;
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const storeName = state.restaurantInfo.name || '';
+
+  let head = '<tr><th class="m">対象年月</th>';
+  menus.forEach(mn => { head += `<th>${esc(mn.masterName || mn.name)}</th>`; });
+  head += '<th class="tot">月合計</th></tr>';
+
+  let body = '';
+  months.forEach(m => {
+    let rowTotal = 0;
+    let cells = '';
+    menus.forEach(mn => {
+      const q = cellQuantity(mn.masterName, m.key);
+      rowTotal += q;
+      cells += `<td>${q ? q.toLocaleString() : ''}</td>`;
+    });
+    body += `<tr><th class="m">${m.year}年${m.month}月</th>${cells}<td class="tot">${rowTotal.toLocaleString()}</td></tr>`;
+  });
+
+  let footCells = '';
+  menus.forEach(mn => { footCells += `<td>${columnTotal(mn.masterName).toLocaleString()}</td>`; });
+  const foot = `<tr class="foot"><th class="m">合計</th>${footCells}<td class="tot">${grandTotal.value.toLocaleString()}</td></tr>`;
+
+  const periodLabel = `${months[0].year}年${months[0].month}月 〜 ${months[11].year}年${months[11].month}月`;
+
+  const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>オーガニック料理 食数表</title>
+<style>
+  @page { size: A4 landscape; margin: 10mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo",sans-serif; color: #111827; margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .head-bar { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 8px; }
+  h1 { font-size: 18px; margin: 0; }
+  .sub { font-size: 11px; color: #374151; }
+  table { border-collapse: collapse; width: 100%; font-size: 11px; }
+  th, td { border: 1px solid #9ca3af; padding: 4px 6px; text-align: center; white-space: nowrap; }
+  thead th { background: #065f46; color: #fff; }
+  th.m { text-align: left; background: #ecfdf5; color: #065f46; }
+  thead th.m { background: #064e3b; color: #fff; }
+  td.tot, th.tot { background: #fff7ed; color: #b45309; font-weight: bold; }
+  thead th.tot { background: #047857; color: #fff; }
+  tr.foot th, tr.foot td { background: #f1f5f9; font-weight: bold; }
+  tr.foot td.tot { background: #fde68a; color: #92400e; }
+</style></head>
+<body>
+  <div class="head-bar">
+    <div><h1>オーガニック料理 食数表</h1><div class="sub">${esc(storeName)}</div></div>
+    <div class="sub">対象期間: ${periodLabel}　／　作成日: ${new Date().toLocaleDateString('ja-JP')}</div>
+  </div>
+  <table><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table>
+  <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};};<\/script>
+</body></html>`;
+
+  const win = window.open('', '_blank', 'width=1100,height=800');
+  if (!win) { alert('ポップアップがブロックされました。印刷するには、このサイトのポップアップを許可してください。'); return; }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
 };
 
 // モーダル・フォーム状態
@@ -403,6 +467,9 @@ const getMenuOrganicClaim = (id) => {
           </select>
           <span class="matrix-period-hint">から 12 ヶ月</span>
         </div>
+        <button class="btn btn-primary" @click="printMatrix" style="display: flex; align-items: center; gap: 0.35rem;">
+          <Printer :size="16" /> 印刷 / PDF
+        </button>
         <div class="matrix-hint">
           <Info :size="15" /> セルに食数を入力すると、その月・メニューの記録が自動で作成／更新されます
         </div>
