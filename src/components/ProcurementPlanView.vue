@@ -587,26 +587,5 @@ const procurementByIngredient = computed(() => {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
-  
-  
-  @page {
-    size: A4 landscape; /* A4横向き */
-    margin: 10mm;
-  }
-}
-
-/* Print Overrides for full document rendering */
-@media print {
-  body, html, #app, .app-container, .main-content, .content-container {
-    height: auto !important;
-    min-height: auto !important;
-    overflow: visible !important;
-    overflow-y: visible !important;
-    position: static !important;
-    display: block !important;
-  }
-  .sidebar, .header {
-    display: none !important;
-  }
 }
 </style>
