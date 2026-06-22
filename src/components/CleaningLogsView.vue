@@ -173,85 +173,90 @@ function printDailyCleaning() {
 
 <template>
   <div class="cleaning-container">
-    <!-- ヘッダー -->
-    <header class="view-header">
+    <!-- モダンヘッダー -->
+    <header class="hyg-header">
       <div class="header-title-area">
         <span class="badge badge-amber">JAS 0004 衛生管理</span>
         <h1 class="view-title">衛生・清掃点検記録簿</h1>
-        <p class="view-subtitle">ホールの日常清掃および出荷場・厨房等のJAS衛生管理の証跡。過去の監査指摘「ホールの清掃」を完全カバーしています。</p>
+        <p class="view-subtitle">エリアごとに月次点検を実施。日常清掃は専用シートを印刷→手書き→スキャンして証跡化します。</p>
       </div>
-      <div class="header-actions">
-        <button class="btn btn-secondary" @click="triggerPrint">
+      <button class="btn btn-primary" @click="openAddModal">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+        新規点検記録
+      </button>
+    </header>
+
+    <!-- 日常清掃チェック表（印刷用紙） -->
+    <section class="hyg-panel hyg-panel--print no-print">
+      <div class="hyg-panel-head">
+        <div class="hyg-panel-icon">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="#16a34a"><path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"/></svg>
+        </div>
+        <div>
+          <h2 class="hyg-panel-title">日常清掃チェック表（印刷用紙）</h2>
+          <p class="hyg-panel-desc">縦＝清掃項目／横＝日付の月間チェック表。印刷して毎日手書き → スキャンして「スキャン受信箱」へ取り込み、証跡化します。</p>
+        </div>
+      </div>
+      <div class="hyg-controls">
+        <label class="hyg-field"><span>エリア</span>
+          <select v-model="dcArea" class="form-select hyg-select">
+            <option v-for="a in cleaningAreas" :key="a" :value="a">{{ a }}</option>
+          </select>
+        </label>
+        <label class="hyg-field"><span>対象年</span>
+          <select v-model="dcYear" class="form-select hyg-select">
+            <option v-for="y in dcYears" :key="y" :value="y">{{ y }}年</option>
+          </select>
+        </label>
+        <label class="hyg-field"><span>対象月</span>
+          <select v-model="dcMonth" class="form-select hyg-select">
+            <option v-for="m in 12" :key="m" :value="m">{{ m }}月</option>
+          </select>
+        </label>
+        <button class="btn btn-emerald" @click="printDailyCleaning">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"/></svg>
+          この内容で印刷
+        </button>
+      </div>
+    </section>
+
+    <!-- 点検記録（月次点検） -->
+    <section class="hyg-panel no-print">
+      <div class="hyg-panel-head hyg-panel-head--between">
+        <div class="hyg-head-left">
+          <div class="hyg-panel-icon hyg-panel-icon--amber">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="#b45309"><path d="M16 11l-1.42-1.42L9 15.17 6.41 12.6 5 14l4 4 7-7zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/></svg>
+          </div>
+          <div>
+            <h2 class="hyg-panel-title">点検記録（月次点検）</h2>
+            <p class="hyg-panel-desc">合計 <strong style="color:#b45309;">{{ filteredLogs.length }}</strong> 件の記録</p>
+          </div>
+        </div>
+        <button class="btn btn-soft" @click="triggerPrint">
           <svg class="icon" viewBox="0 0 24 24"><path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"/></svg>
           監査用印刷
         </button>
-        <button class="btn btn-primary" @click="openAddModal">
-          <svg class="icon" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-          新規点検記録
-        </button>
       </div>
-    </header>
-
-    <!-- 日常清掃チェック表（印刷→手書き→スキャン） -->
-    <div class="filter-card no-print" style="border-left: 4px solid #16a34a;">
-      <div class="filter-group">
-        <div class="filter-item">
-          <label>日常清掃チェック表：エリア</label>
-          <select v-model="dcArea" class="form-select">
-            <option v-for="a in cleaningAreas" :key="a" :value="a">{{ a }}</option>
-          </select>
-        </div>
-        <div class="filter-item">
-          <label>対象年</label>
-          <select v-model="dcYear" class="form-select">
-            <option v-for="y in dcYears" :key="y" :value="y">{{ y }}年</option>
-          </select>
-        </div>
-        <div class="filter-item">
-          <label>対象月</label>
-          <select v-model="dcMonth" class="form-select">
-            <option v-for="m in 12" :key="m" :value="m">{{ m }}月</option>
-          </select>
-        </div>
-        <div class="filter-item" style="align-self: flex-end;">
-          <button class="btn btn-primary" @click="printDailyCleaning">
-            <svg class="icon" viewBox="0 0 24 24"><path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"/></svg>
-            日常清掃チェック表を印刷
-          </button>
-        </div>
-      </div>
-      <div class="filter-stats" style="font-size: 0.8rem; color: #6b7280;">
-        縦＝清掃項目／横＝日付（1〜末日）の月間チェック表。印刷→手書きで毎日チェック→スキャンして「スキャン受信箱」へ取り込み、証跡として保存します。
-      </div>
-    </div>
-
-    <!-- 検索 & フィルター -->
-    <div class="filter-card no-print">
-      <div class="filter-group">
-        <div class="filter-item">
-          <label>点検エリア</label>
-          <select v-model="filterArea" class="form-select">
+      <div class="hyg-controls">
+        <label class="hyg-field"><span>エリアで絞り込み</span>
+          <select v-model="filterArea" class="form-select hyg-select">
             <option value="all">すべてのエリア</option>
             <option value="ホール">ホール（一般客エリア）</option>
             <option value="厨房">厨房（調理加工エリア）</option>
             <option value="食材保管庫">食材保管庫（区分保管庫）</option>
             <option value="出荷場">出荷場（配送・出荷エリア）</option>
           </select>
-        </div>
-        <div class="filter-item">
-          <label>点検評価</label>
-          <select v-model="filterStatus" class="form-select">
+        </label>
+        <label class="hyg-field"><span>評価で絞り込み</span>
+          <select v-model="filterStatus" class="form-select hyg-select">
             <option value="all">すべてのステータス</option>
             <option value="good">良 (良好)</option>
             <option value="warning">要改善</option>
             <option value="bad">不可 (一般混同等)</option>
           </select>
-        </div>
+        </label>
       </div>
-      <div class="filter-stats">
-        合計: <strong class="text-amber">{{ filteredLogs.length }}</strong> 件の記録
-      </div>
-    </div>
+    </section>
 
     <!-- 点検記録リスト（グリッド / 印刷対応） -->
     <div v-if="filteredLogs.length === 0" class="empty-state card">
@@ -458,8 +463,66 @@ function printDailyCleaning() {
 .cleaning-container {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.25rem;
 }
+
+/* ===== モダン版 ヘッダー＆操作パネル ===== */
+.hyg-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.hyg-panel {
+  background: #ffffff;
+  border: 1px solid #e6efe9;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(16, 24, 40, 0.05);
+  padding: 1.1rem 1.25rem;
+}
+.hyg-panel--print { border-left: 5px solid #16a34a; }
+.hyg-panel-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+.hyg-panel-head--between { justify-content: space-between; align-items: center; }
+.hyg-head-left { display: flex; align-items: center; gap: 0.6rem; }
+.hyg-panel-icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  background: #ecfdf5; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.hyg-panel-icon--amber { background: #fffbeb; }
+.hyg-panel-title { font-size: 1.05rem; font-weight: 700; color: #1f2937; margin: 0; }
+.hyg-panel-desc { font-size: 0.8rem; color: #6b7280; margin: 2px 0 0; line-height: 1.5; }
+.hyg-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; }
+.hyg-field { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.78rem; color: #475569; font-weight: 600; }
+.hyg-select {
+  padding: 0.5rem 0.7rem !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 9px !important;
+  background: #fff;
+  font-size: 0.95rem;
+  font-weight: 400;
+  min-width: 160px;
+  color: #1f2937;
+}
+.hyg-select:focus { outline: none; border-color: #10b981 !important; box-shadow: 0 0 0 3px rgba(16,185,129,0.15); }
+.btn-emerald {
+  background: #16a34a; color: #fff; border: none;
+  padding: 0.55rem 1.1rem; border-radius: 10px; font-weight: 700; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 0.4rem;
+}
+.btn-emerald:hover { background: #15803d; }
+.btn-soft {
+  background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0;
+  padding: 0.5rem 0.9rem; border-radius: 10px; font-weight: 600; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 0.4rem;
+}
+.btn-soft:hover { background: #e2e8f0; }
+.btn-emerald .icon, .btn-soft .icon { width: 16px; height: 16px; fill: currentColor; }
 
 .logs-grid {
   display: grid;
