@@ -137,7 +137,6 @@ function printDailyCleaning() {
 
   let rows = '';
   dailyCleaningItems.forEach(it => { rows += `<tr><th class="item">${esc(it)}</th>${dayBlank}</tr>`; });
-  rows += `<tr class="sign"><th class="item">確認者（サイン）</th>${dayBlank}</tr>`;
 
   const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>日常清掃チェック表</title>
 <style>
@@ -151,15 +150,21 @@ function printDailyCleaning() {
   th, td { border: 1px solid #555; text-align: center; font-size: 9px; height: 22px; }
   th.item { width: 130px; text-align: left; padding: 2px 4px; background: #f1f5f9; font-size: 10px; white-space: nowrap; }
   th.day { background: #ecfdf5; color: #065f46; font-weight: 700; }
-  tr.sign th.item { background: #fffbeb; }
   .note { font-size: 10px; color: #6b7280; margin-top: 6px; }
+  .sign-area { display: flex; align-items: flex-end; gap: 24px; margin-top: 14px; font-size: 12px; }
+  .sign-line { display: inline-block; min-width: 180px; border-bottom: 1px solid #111827; }
+  .sign-date { display: inline-block; min-width: 110px; border-bottom: 1px solid #111827; }
 </style></head><body>
   <div class="head">
     <div><h1>日常清掃チェック表</h1><div class="sub">${esc(storeName)}　／　エリア: ${esc(dcArea.value)}</div></div>
     <div class="sub">${year}年 ${month}月　／　責任者: ${esc(manager)}</div>
   </div>
   <table><thead><tr><th class="item">清掃項目 ＼ 日</th>${dayTh}</tr></thead><tbody>${rows}</tbody></table>
-  <div class="note">※ 実施した日にチェック（レ）を記入してください。記入後はスキャンして「スキャン受信箱」に取り込み、当月・当エリアの証跡として保存します。</div>
+  <div class="sign-area">
+    <span>月次確認（確認者サイン）：<span class="sign-line"></span></span>
+    <span>確認日：<span class="sign-date"></span></span>
+  </div>
+  <div class="note">※ 実施した日にチェック（レ）を記入してください。確認者のサインは月末に1か所のみで結構です。記入後はスキャンして「スキャン受信箱」に取り込み、当月・当エリアの証跡として保存します。</div>
   <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};};<\/script>
 </body></html>`;
 
