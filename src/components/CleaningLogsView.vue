@@ -99,6 +99,76 @@ function handleDelete(id) {
 function triggerPrint() {
   window.print();
 }
+
+// ============================================================================
+// 日常清掃チェック表（印刷 → 手書き → スキャン受信箱へ取り込み）
+//  - 縦＝清掃項目／横＝日付(1〜末日) の月間チェック表（チェックを書き込むだけ）
+//  - エリアごと・月ごとに1枚。確実に動く別ウィンドウ書き出し方式で印刷（A4横）。
+// ============================================================================
+const cleaningAreas = ['ホール', '厨房', '食材保管庫', '出荷場'];
+const dailyCleaningItems = [
+  '床の清掃・消毒',
+  '壁・什器・備品の清掃',
+  'テーブル・カウンターの清掃消毒',
+  'ゴミの廃棄・分別',
+  '手洗い・消毒設備の点検',
+  '一般エリアとの区分・接触防止',
+  '害虫・異物の有無確認'
+];
+const dcArea = ref('ホール');
+const dcYear = ref(new Date().getFullYear());
+const dcMonth = ref(new Date().getMonth() + 1);
+const dcYears = computed(() => {
+  const c = new Date().getFullYear();
+  return Array.from({ length: 5 }, (_, i) => c - 2 + i);
+});
+
+function printDailyCleaning() {
+  const year = dcYear.value;
+  const month = dcMonth.value;
+  const days = new Date(year, month, 0).getDate();
+  const storeName = state.restaurantInfo.name || '';
+  const manager = state.restaurantInfo.manager || '';
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  let dayTh = '';
+  let dayBlank = '';
+  for (let d = 1; d <= days; d++) { dayTh += `<th class="day">${d}</th>`; dayBlank += '<td></td>'; }
+
+  let rows = '';
+  dailyCleaningItems.forEach(it => { rows += `<tr><th class="item">${esc(it)}</th>${dayBlank}</tr>`; });
+  rows += `<tr class="sign"><th class="item">確認者（サイン）</th>${dayBlank}</tr>`;
+
+  const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>日常清掃チェック表</title>
+<style>
+  @page { size: A4 landscape; margin: 8mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo",sans-serif; color: #111827; margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 6px; }
+  h1 { font-size: 18px; margin: 0; }
+  .sub { font-size: 12px; color: #374151; }
+  table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+  th, td { border: 1px solid #555; text-align: center; font-size: 9px; height: 22px; }
+  th.item { width: 130px; text-align: left; padding: 2px 4px; background: #f1f5f9; font-size: 10px; white-space: nowrap; }
+  th.day { background: #ecfdf5; color: #065f46; font-weight: 700; }
+  tr.sign th.item { background: #fffbeb; }
+  .note { font-size: 10px; color: #6b7280; margin-top: 6px; }
+</style></head><body>
+  <div class="head">
+    <div><h1>日常清掃チェック表</h1><div class="sub">${esc(storeName)}　／　エリア: ${esc(dcArea.value)}</div></div>
+    <div class="sub">${year}年 ${month}月　／　責任者: ${esc(manager)}</div>
+  </div>
+  <table><thead><tr><th class="item">清掃項目 ＼ 日</th>${dayTh}</tr></thead><tbody>${rows}</tbody></table>
+  <div class="note">※ 実施した日にチェック（レ）を記入してください。記入後はスキャンして「スキャン受信箱」に取り込み、当月・当エリアの証跡として保存します。</div>
+  <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};};<\/script>
+</body></html>`;
+
+  const win = window.open('', '_blank', 'width=1100,height=800');
+  if (!win) { alert('ポップアップがブロックされました。印刷するには、このサイトのポップアップを許可してください。'); return; }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+}
 </script>
 
 <template>
@@ -121,6 +191,39 @@ function triggerPrint() {
         </button>
       </div>
     </header>
+
+    <!-- 日常清掃チェック表（印刷→手書き→スキャン） -->
+    <div class="filter-card no-print" style="border-left: 4px solid #16a34a;">
+      <div class="filter-group">
+        <div class="filter-item">
+          <label>日常清掃チェック表：エリア</label>
+          <select v-model="dcArea" class="form-select">
+            <option v-for="a in cleaningAreas" :key="a" :value="a">{{ a }}</option>
+          </select>
+        </div>
+        <div class="filter-item">
+          <label>対象年</label>
+          <select v-model="dcYear" class="form-select">
+            <option v-for="y in dcYears" :key="y" :value="y">{{ y }}年</option>
+          </select>
+        </div>
+        <div class="filter-item">
+          <label>対象月</label>
+          <select v-model="dcMonth" class="form-select">
+            <option v-for="m in 12" :key="m" :value="m">{{ m }}月</option>
+          </select>
+        </div>
+        <div class="filter-item" style="align-self: flex-end;">
+          <button class="btn btn-primary" @click="printDailyCleaning">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"/></svg>
+            日常清掃チェック表を印刷
+          </button>
+        </div>
+      </div>
+      <div class="filter-stats" style="font-size: 0.8rem; color: #6b7280;">
+        縦＝清掃項目／横＝日付（1〜末日）の月間チェック表。印刷→手書きで毎日チェック→スキャンして「スキャン受信箱」へ取り込み、証跡として保存します。
+      </div>
+    </div>
 
     <!-- 検索 & フィルター -->
     <div class="filter-card no-print">
